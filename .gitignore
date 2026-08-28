@@ -1,0 +1,11 @@
+# python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# project caches & generated plots
+data/
+cache/
+cache_plots/
+Mapas_Generados/
