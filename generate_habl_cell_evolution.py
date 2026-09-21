@@ -1,4 +1,4 @@
-"""Generate multi-session evolution figures for all cells present in >=2 HabL sessions.
+"""Generate multi-session cell-tracking figures for all cells present in >=2 HabL sessions.
 
 Method used:
 - Trajectory with every S > 0 sample colored by S amplitude.
@@ -27,7 +27,7 @@ from core.place_fields import gaussian_rate_maps_matlab
 
 
 DEFAULT_SESSION_FILE = "2026_06_18_merged.mat"
-DEFAULT_OUTPUT_DIR = Path("results/HabL_cell_evolution")
+DEFAULT_OUTPUT_DIR = Path("results/HabL_multisession_cell_tracking")
 BIN_SIZE_CM = 1.0
 SIGMA_CM = 4.0
 ARENA_RADIUS_CM = 25.0
@@ -357,7 +357,7 @@ def animals_with_session(session_file):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate HabL cell evolution figures.")
+    parser = argparse.ArgumentParser(description="Generate HabL multi-session cell-tracking figures.")
     parser.add_argument(
         "--animals",
         nargs="+",
