@@ -3,6 +3,10 @@ import scipy.io
 import numpy as np
 
 def get_data_dir():
+    configured_dir = os.environ.get('MINISCOPE_DATA_DIR')
+    if configured_dir:
+        return os.path.abspath(os.path.expanduser(configured_dir))
+
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_dir, 'data')
 
@@ -112,3 +116,40 @@ def get_common_neurons(mapping):
     mapping = np.asarray(mapping)
     valid_mask = ~np.isnan(mapping).any(axis=1)
     return np.where(valid_mask)[0]
+
+
+def mapping_rows_for_columns(mapping, sub_index, n_columns):
+    """devuelve la fila global correspondiente a cada columna de s."""
+    mapping = np.asarray(mapping, dtype=float)
+    local_ids = mapping[:, sub_index]
+    rows = np.flatnonzero(np.isfinite(local_ids))
+    if len(rows) != n_columns:
+        raise ValueError(
+            f"mapping ambiguo en la subsesion {sub_index + 1}: "
+            f"hay {len(rows)} ids locales y {n_columns} columnas en s"
+        )
+    ordered_rows = rows[np.argsort(local_ids[rows])]
+    ordered_ids = local_ids[ordered_rows]
+    if len(np.unique(ordered_ids)) != len(ordered_ids):
+        raise ValueError(f"hay ids locales duplicados en la subsesion {sub_index + 1}")
+    return ordered_rows.astype(int)
+
+
+def mapping_columns(mapping, global_ids, sub_index, n_columns):
+    """Translate CellReg local IDs to columns of a filtered activity matrix.
+
+    In this dataset ``mapping`` stores zero-based IDs in the original local
+    extraction, while C/S contain the mapped cells ordered by those IDs.  The
+    translation is only identifiable when every C/S column has one finite ID
+    in the corresponding mapping column.  Refuse ambiguous files rather than
+    silently selecting a neighbouring neuron.
+    """
+    mapping = np.asarray(mapping, dtype=float)
+    rows = mapping_rows_for_columns(mapping, sub_index, n_columns)
+    column_by_row = {int(row): column for column, row in enumerate(rows)}
+    try:
+        return np.asarray([column_by_row[int(row)] for row in global_ids], dtype=int)
+    except KeyError as error:
+        raise ValueError(
+            f"la celula global {error.args[0]} no esta en la subsesion {sub_index + 1}"
+        ) from error

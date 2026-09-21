@@ -1,95 +1,150 @@
+import argparse
 import os
-import pickle
-import numpy as np
+
 import matplotlib
-matplotlib.use('Agg')
+import numpy as np
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from concurrent.futures import ProcessPoolExecutor
 
-from core.data_loader import list_sessions, load_session
-from core.place_fields import compute_rate_map, draw_neuron_analysis
+from core.data_loader import (
+    get_common_neurons,
+    list_sessions,
+    load_session,
+    mapping_columns,
+)
+from core.place_fields import compute_rate_map, draw_neuron_analysis, threshold_event_frames
 
-# =============================================================================
-# PARAMETROS
-# =============================================================================
-BIN_SIZE = 2.5
-SIGMA = 2.0
-OUTPUT_DIR = "results"
-MAX_WORKERS = 4 
-SAVE_PLOTS = True
-# =============================================================================
 
-def procesar_sesion(session_info):
-    animal = session_info['animal']
-    session_file = session_info['session_file']
-    
-    print(f"[{animal}] Procesando {session_file}...")
-    
-    # cargar datos
-    data = load_session(animal, session_file)
-    
-    # crear path
-    cache_dir = os.path.join(OUTPUT_DIR, "cache", animal)
-    os.makedirs(cache_dir, exist_ok=True)
-    
-    if SAVE_PLOTS:
-        plot_dir = os.path.join(OUTPUT_DIR, "plots", animal, session_file.replace(".mat", ""))
-        os.makedirs(plot_dir, exist_ok=True)
-    
-    resultados_sesion = {
-        'animal': animal,
-        'session_file': session_file,
-        'bin_size': BIN_SIZE,
-        'sigma': SIGMA,
-        'rate_maps': {}
-    }
-    
-    # manejar sesiones simples vs merged
-    subsessions = data['subsessions'] if data['type'] == 'merged' else [data]
-    
-    for sub_idx, sub in enumerate(subsessions):
-        x, y, t, spikes = sub['x'], sub['y'], sub['t'], sub['S']
-        n_neurons = sub['n_neurons']
-        
-        # guardamos por neurona
-        for n in range(n_neurons):
-            neuron_spikes = spikes[:, n]
-            if np.sum(neuron_spikes) == 0:
-                continue
-                
+def process_session(animal, session_file, data_dir=None, out_dir="results"):
+    print(f"Procesando {animal} - {session_file}...", flush=True)
+    data = load_session(animal, session_file, data_dir=data_dir)
+
+    if data["type"] == "simple":
+        subsessions = [data]
+        common_neurons = np.arange(data["n_neurons"], dtype=int)
+        columns_per_sub = [common_neurons.copy()]
+        mapping = None
+    else:
+        subsessions = data["subsessions"]
+        mapping = data["mapping"]
+        common_neurons = get_common_neurons(mapping)
+        columns_per_sub = [
+            mapping_columns(mapping, common_neurons, index, sub["S"].shape[1])
+            for index, sub in enumerate(subsessions)
+        ]
+
+    if len(common_neurons) == 0:
+        print(f"  Sin neuronas comunes: {animal} - {session_file}", flush=True)
+        return
+
+    session_out = os.path.join(out_dir, animal, session_file.replace(".mat", ""))
+    os.makedirs(session_out, exist_ok=True)
+    common_index = {int(global_id): index for index, global_id in enumerate(common_neurons)}
+
+    for global_id in common_neurons:
+        fig, axes = plt.subplots(
+            len(subsessions), 2, figsize=(10, 4 * len(subsessions))
+        )
+        axes = np.atleast_2d(axes)
+        neuron_data = {}
+
+        for sub_index, sub in enumerate(subsessions):
+            column_index = common_index[int(global_id)]
+            local_id = int(columns_per_sub[sub_index][column_index])
+            if mapping is None:
+                local_original_id = int(global_id)
+            else:
+                local_original_id = mapping[global_id, sub_index]
+
+            signal = sub["S"][:, local_id]
+            events, threshold = threshold_event_frames(signal)
             rate_map, x_bins, y_bins = compute_rate_map(
-                x, y, t, neuron_spikes,
-                bin_size=BIN_SIZE,
-                sigma=SIGMA
+                sub["x"], sub["y"], sub["t"], events,
+                bin_size=2.5,
+                sigma=2.5,
             )
             extent = [x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]]
-            
-            # guardamos el mapa en la memoria de resultados
-            key = f"sub_{sub_idx}_n_{n}" if data['type'] == 'merged' else f"n_{n}"
-            resultados_sesion['rate_maps'][key] = rate_map
-            
-            if SAVE_PLOTS:
-                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
-                title = f"Neurona {n}" + (f" (Sub {sub_idx})" if data['type'] == 'merged' else "")
-                draw_neuron_analysis(ax1, ax2, x, y, neuron_spikes, rate_map, extent, title)
-                fig.savefig(os.path.join(plot_dir, f"{key}.png"), dpi=100, bbox_inches='tight')
-                plt.close(fig)
-    
-    # exportar el .pkl unificado de la sesion
-    out_pkl = os.path.join(cache_dir, session_file.replace(".mat", ".pkl"))
-    with open(out_pkl, 'wb') as f:
-        pickle.dump(resultados_sesion, f)
-        
-    print(f"[{animal}] Terminando {session_file}. Guardado en {out_pkl}")
+
+            neuron_data[f"sub_{sub_index}_rate_map"] = rate_map
+            neuron_data[f"sub_{sub_index}_events"] = events
+            neuron_data[f"sub_{sub_index}_threshold_3sd"] = threshold
+
+            ax_traj = axes[sub_index, 0]
+            ax_map = axes[sub_index, 1]
+            image = draw_neuron_analysis(
+                ax_traj,
+                ax_map,
+                sub["x"],
+                sub["y"],
+                events,
+                rate_map,
+                extent,
+                neuron_id=(
+                    f"Global {global_id} "
+                    f"(Local {local_original_id}->Col {local_id})"
+                ),
+            )
+            ax_traj.set_title(f"Sub {sub_index + 1} | {ax_traj.get_title()}")
+            ax_map.set_title(f"Sub {sub_index + 1} | {ax_map.get_title()}")
+            fig.colorbar(image, ax=ax_map, fraction=0.046, pad=0.04).set_label(
+                "eventos/s"
+            )
+
+        plt.tight_layout()
+        png_path = os.path.join(session_out, f"neuron_{int(global_id):04d}.png")
+        plt.savefig(png_path, dpi=100)
+        plt.close(fig)
+
+        npz_path = os.path.join(session_out, f"neuron_{int(global_id):04d}.npz")
+        np.savez_compressed(npz_path, **neuron_data)
+
+    print(
+        f"Listo: {len(common_neurons)} neuronas en {session_out}",
+        flush=True,
+    )
+
+
+def process_all(data_dir=None, out_dir="results", animal=None, session_file=None):
+    sessions = [
+        session for session in list_sessions(data_dir=data_dir)
+        if (animal is None or session["animal"] == animal)
+        and (session_file is None or session["session_file"] == session_file)
+    ]
+    if not sessions:
+        raise SystemExit("No se encontraron sesiones que coincidan con los filtros.")
+
+    for session in sessions:
+        try:
+            process_session(
+                session["animal"],
+                session["session_file"],
+                data_dir=data_dir,
+                out_dir=out_dir,
+            )
+        except Exception as error:
+            print(
+                f"[OMITIDA] {session['animal']} / {session['session_file']}: {error}",
+                flush=True,
+            )
+
 
 def main():
-    print(f"Iniciando procesamiento...")
-    sessions = list_sessions()
-    
-    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        executor.map(procesar_sesion, sessions)
-        
-    print("Batch finalizado.")
+    parser = argparse.ArgumentParser(
+        description="Genera mapas de actividad para todas las sesiones disponibles."
+    )
+    parser.add_argument("--animal", help="Procesar solamente un animal")
+    parser.add_argument("--session", dest="session_file", help="Procesar solamente un archivo .mat")
+    parser.add_argument("--data-dir", default=None, help="Carpeta con las carpetas de animales")
+    parser.add_argument("--out-dir", default="results", help="Carpeta de salida")
+    args = parser.parse_args()
+    process_all(
+        data_dir=args.data_dir,
+        out_dir=args.out_dir,
+        animal=args.animal,
+        session_file=args.session_file,
+    )
+
 
 if __name__ == "__main__":
     main()

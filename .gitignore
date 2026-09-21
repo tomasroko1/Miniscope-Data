@@ -6,6 +6,22 @@ __pycache__/
 
 # project caches & generated plots
 data/
+results/
+coactivation_analysis/results/
 cache/
 cache_plots/
 Mapas_Generados/
+
+# local reports, references and notes
+informe/
+papers/
+notas.txt
+
+# local documentation
+/README.md
+/FORMATO_DATOS_MINISCOPE.md
+/EXPLICACION_MAPPING_Y_ESTABILIDAD_HABL.md
+coactivation_analysis/README.md
+
+# local run logs
+*.log
