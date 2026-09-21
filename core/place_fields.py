@@ -128,22 +128,14 @@ def gaussian_rate_maps_matlab(x, y, t, activity, bin_size=1.0,
                               block_size=256):
     """Rate maps from the continuous-position Gaussian estimator.
 
-    This is the direct vectorised equivalent of the MATLAB calculation::
-
         W = exp(-(xdiff + ydiff) / sigma_sq);
         coverage = sum(W, 2);
         mapr = sample_rate * (W * r) ./ coverage;
 
     Here ``sigma`` is the usual Gaussian standard deviation in cm, hence
-    ``sigma_sq`` in the expression above is ``2 * sigma**2``.  The sampling
-    rate is obtained from the timestamps rather than assumed: the HabL data
-    are sampled at 20 Hz, not 50 Hz.  This only changes the units of the map,
-    not its spatial pattern.
+    ``sigma_sq`` in the expression above is ``2 * sigma**2``.
 
-    ``activity`` is one value per frame and cell, normally a binary event
-    matrix.  Evaluation pixels are processed in blocks, so the result is
-    mathematically the same as allocating the very large full ``W`` matrix
-    but does not require hundreds of MB of temporary memory.
+    ``activity`` is one value per frame and cell.
 
     Returns
     -------
@@ -151,9 +143,6 @@ def gaussian_rate_maps_matlab(x, y, t, activity, bin_size=1.0,
         Activity rate in events/s (or activity units/s).
     edges : ndarray
         Shared x/y grid edges in cm.
-    metadata : dict
-        Includes the sampling rate, the literal MATLAB ``sigma_sq`` and
-        coverage map for provenance.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
