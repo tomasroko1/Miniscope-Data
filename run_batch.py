@@ -134,7 +134,7 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
 
 
 def _process_local_only(animal, subsessions, session_out, phase_names):
-    """Draw local cells per phase if cross-phase CellReg mapping is ambiguous."""
+    """Draw local cells per phase if the cross-phase mapping is ambiguous."""
     total = 0
     for phase_index, (sub, cache) in enumerate(zip(subsessions, _prepare_rate_maps(subsessions))):
         local_out = os.path.join(session_out, f"phase_{phase_index + 1}_local_only")
@@ -181,7 +181,7 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
             ]
         except ValueError as error:
             print(
-                f"  CellReg no alinea todas las fases ({error}). "
+                f"  El mapping no alinea todas las fases ({error}). "
                 "Se guardarán mapas por fase, sin enlazar IDs.",
                 flush=True,
             )

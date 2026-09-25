@@ -136,7 +136,7 @@ def mapping_rows_for_columns(mapping, sub_index, n_columns):
 
 
 def mapping_columns(mapping, global_ids, sub_index, n_columns):
-    """Translate CellReg local IDs to columns of a filtered activity matrix.
+    """Translate local mapping IDs to columns of a filtered activity matrix.
 
     In this dataset ``mapping`` stores zero-based IDs in the original local
     extraction, while C/S contain the mapped cells ordered by those IDs.  The
