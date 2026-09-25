@@ -22,6 +22,9 @@ addpath(genpath(stoixeionDir));
 if exist('Stoixeion', 'file') ~= 2
     error('Stoixeion.m was not found on the MATLAB path.');
 end
+if nargout('Stoixeion') < 2
+    error('Apply stoixeion_exports.patch to the cloned Stoixeion folder, then rerun.');
+end
 
 oldVisibility = get(groot, 'DefaultFigureVisible');
 set(groot, 'DefaultFigureVisible', 'off');
@@ -31,7 +34,12 @@ writeProtocol(outDir, selection, dataDir, stoixeionDir);
 
 summaryRows = {};
 coreRows = {};
+ensembleRows = {};
+singularRows = {};
+ensembleActivityRows = {};
 overlapRows = {};
+thresholdRows = {};
+coreShuffleRows = {};
 animals = dir(fullfile(dataDir, 'R*'));
 animals = animals([animals.isdir]);
 
@@ -49,14 +57,13 @@ for ai = 1:numel(animals)
         if ~selectedSession(selection, animal, dayName, sessionID), continue; end
 
         activity = loaded.act;
-        if ~isfield(activity, 'S') || ~isfield(activity, 'C') || ~isfield(activity, 't')
-            fprintf('[OMITIDA] %s: falta C, S o t.\n', sessionID);
+        if ~isfield(activity, 'S') || ~isfield(activity, 't')
+            fprintf('[OMITIDA] %s: falta S o t.\n', sessionID);
             continue;
         end
         phaseS = toPhases(activity.S);
-        phaseC = toPhases(activity.C);
         phaseT = toPhases(activity.t);
-        nPhases = min([numel(phaseS), numel(phaseC), numel(phaseT)]);
+        nPhases = min(numel(phaseS), numel(phaseT));
         if nPhases ~= 4
             fprintf('[OMITIDA] %s: se esperaban 4 fases y hay %d.\n', sessionID, nPhases);
             continue;
@@ -119,29 +126,32 @@ for ai = 1:numel(animals)
             phaseOut = fullfile(dayOut, phaseNames{pi});
             if exist(phaseOut, 'dir') ~= 7, mkdir(phaseOut); end
             try
-                C = double(phaseC{pi});
                 S = double(phaseS{pi});
                 t = double(phaseT{pi}(:));
                 cols = phaseColumns{pi};
-                C = C(:, cols);
                 S = S(:, cols);
-                if size(C, 1) ~= size(S, 1) || size(S, 1) ~= numel(t)
-                    error('C, S y t no coinciden en frames.');
+                if size(S, 1) ~= numel(t)
+                    error('S y t no coinciden en frames.');
                 end
-                [spikes, activeFraction, fallbackCells] = binarizePhase(C, S, t, 3);
+                [spikes, activeFraction, thresholds] = binarizePhase(S, 3);
                 nPhaseCells = size(spikes, 1);
                 coords = [(1:nPhaseCells)' zeros(nPhaseCells, 1)];
 
                 close all force;
-                pools = Stoixeion(spikes, coords, []);
+                [pools, diagnostics] = Stoixeion(spikes, coords, []);
                 saveStoixeionFigures(phaseOut);
                 close all force;
-
-                if isempty(pools)
-                    nFactors = 0;
-                else
-                    nFactors = size(pools, 3);
+                nFactors = size(diagnostics.ensemble_vectors, 2);
+                newShuffleRows = plotCoreVsShuffled(spikes, pools, diagnostics, t, phaseOut, ...
+                    animal, dayName, sessionFile, phaseNames{pi}, 199);
+                if ~isempty(newShuffleRows)
+                    if isempty(coreShuffleRows)
+                        coreShuffleRows = newShuffleRows;
+                    else
+                        coreShuffleRows = [coreShuffleRows; newShuffleRows]; %#ok<AGROW>
+                    end
                 end
+
                 phaseCoreSets{pi} = cell(1, nFactors);
                 coreCount = 0;
                 for factor = 1:nFactors
@@ -163,20 +173,59 @@ for ai = 1:numel(animals)
                         coreRows(end + 1, :) = {animal, dayName, sessionFile, phaseNames{pi}, ...
                             factor, localCells(ci), globalID}; %#ok<AGROW>
                     end
+                    allCells = find(diagnostics.all_ensemble_cells(:, factor) > 0);
+                    for ci = 1:numel(allCells)
+                        cellIndex = allCells(ci);
+                        if mappingOK
+                            globalID = commonRows(cellIndex) - 1;
+                        else
+                            globalID = NaN;
+                        end
+                        ensembleRows(end + 1, :) = {animal, dayName, sessionFile, phaseNames{pi}, ...
+                            factor, cellIndex, globalID, ismember(cellIndex, localCells)}; %#ok<AGROW>
+                    end
                 end
+                for rank = 1:numel(diagnostics.singular_values)
+                    singularRows(end + 1, :) = {animal, dayName, sessionFile, phaseNames{pi}, ...
+                        rank, diagnostics.singular_values(rank), ...
+                        ismember(rank, diagnostics.selected_singular_ranks)}; %#ok<AGROW>
+                end
+                for vec = 1:size(diagnostics.ensemble_vectors, 1)
+                    activeFactors = find(diagnostics.ensemble_vectors(vec, :) > 0);
+                    for factor = activeFactors
+                        frame = diagnostics.significant_frames(vec);
+                        ensembleActivityRows(end + 1, :) = {animal, dayName, sessionFile, ...
+                            phaseNames{pi}, frame, t(frame), factor}; %#ok<AGROW>
+                    end
+                end
+                for ci = 1:nPhaseCells
+                    if mappingOK
+                        globalID = commonRows(ci) - 1;
+                    else
+                        globalID = NaN;
+                    end
+                    thresholdRows(end + 1, :) = {animal, dayName, sessionFile, phaseNames{pi}, ...
+                        ci, globalID, thresholds(ci)}; %#ok<AGROW>
+                end
+                validThresholds = thresholds(isfinite(thresholds));
+                if isempty(validThresholds), medianThreshold = NaN;
+                else, medianThreshold = median(validThresholds); end
                 summaryRows(end + 1, :) = {animal, dayName, sessionFile, phaseNames{pi}, ...
-                    nPhaseCells, nCellsUsed, activeFraction, fallbackCells, mappingOK, ...
-                    nFactors, coreCount, 'ok'}; %#ok<AGROW>
+                    nPhaseCells, nCellsUsed, activeFraction, medianThreshold, mappingOK, ...
+                    diagnostics.pks, numel(diagnostics.significant_frames), diagnostics.scut, ...
+                    diagnostics.hcut, nFactors, coreCount, 'ok'}; %#ok<AGROW>
                 phaseSuccess(pi) = true;
                 fprintf('[OK] %s %s: %d células, %d factores.\n', ...
                     sessionID, phaseNames{pi}, nPhaseCells, nFactors);
             catch ME
                 close all force;
                 summaryRows(end + 1, :) = {animal, dayName, sessionFile, phaseNames{pi}, ...
-                    numel(phaseColumns{pi}), nCellsUsed, NaN, NaN, mappingOK, NaN, NaN, ME.message}; %#ok<AGROW>
+                    numel(phaseColumns{pi}), nCellsUsed, NaN, NaN, mappingOK, ...
+                    NaN, NaN, NaN, NaN, NaN, NaN, ME.message}; %#ok<AGROW>
                 fprintf('[FALLO] %s %s: %s\n', sessionID, phaseNames{pi}, ME.message);
             end
-            writeOutputs(outDir, summaryRows, coreRows, overlapRows);
+            writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
+                ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows);
         end
 
         if mappingOK && all(phaseSuccess)
@@ -189,11 +238,13 @@ for ai = 1:numel(animals)
                     overlapRows = [overlapRows; newOverlap]; %#ok<AGROW>
                 end
             end
-            writeOutputs(outDir, summaryRows, coreRows, overlapRows);
+            writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
+                ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows);
         end
     end
 end
-writeOutputs(outDir, summaryRows, coreRows, overlapRows);
+writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
+    ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows);
 fprintf('Resultados: %s\n', outDir);
 end
 
@@ -229,25 +280,18 @@ else
 end
 end
 
-function [spikes, activeFraction, fallbackCells] = binarizePhase(C, S, t, thresholdSD)
-dt = diff(t);
-if isempty(dt) || any(~isfinite(dt) | dt <= 0)
-    error('Los tiempos deben crecer de forma estricta.');
-end
-dC = diff(C, 1, 1) ./ dt;
-spikes = false(size(C, 2), size(C, 1));
-fallbackCells = 0;
-for cellIndex = 1:size(C, 2)
-    derivative = dC(:, cellIndex);
-    quiet = S(2:end, cellIndex) <= 0 & isfinite(derivative);
-    noise = derivative(quiet);
-    if numel(noise) < 100
-        noise = derivative(isfinite(derivative));
-        fallbackCells = fallbackCells + 1;
-    end
-    if numel(noise) < 2, continue; end
-    cutoff = mean(noise) + thresholdSD * std(noise, 0);
-    spikes(cellIndex, 2:end) = isfinite(derivative) & derivative > cutoff;
+function [spikes, activeFraction, thresholds] = binarizePhase(S, thresholdSD)
+nCells = size(S, 2);
+nFrames = size(S, 1);
+spikes = false(nCells, nFrames);
+thresholds = nan(1, nCells);
+for cellIndex = 1:nCells
+    signal = S(:, cellIndex);
+    finiteSignal = signal(isfinite(signal));
+    if numel(finiteSignal) < 2, continue; end
+    thresholds(cellIndex) = thresholdSD * std(finiteSignal, 0);
+    signal(~isfinite(signal)) = 0;
+    spikes(cellIndex, :) = signal > thresholds(cellIndex);
 end
 activeFraction = mean(spikes(:));
 end
@@ -258,6 +302,100 @@ for k = 1:numel(figures)
     number = get(figures(k), 'Number');
     if number < 1 || number > 9, continue; end
     saveas(figures(k), fullfile(folder, sprintf('stoixeion_%02d.png', number)));
+end
+end
+
+function rows = plotCoreVsShuffled(spikes, pools, diagnostics, t, folder, animal, dayName, sessionFile, phase, nShuffles)
+rows = {};
+if isempty(pools), return; end
+nCells = size(spikes, 1);
+nFrames = size(spikes, 2);
+if numel(t) ~= nFrames || nCells < 2, return; end
+dt = median(diff(t));
+if ~isfinite(dt) || dt <= 0, dt = 1; end
+binFrames = max(1, round(0.5 / dt));
+nBins = floor(nFrames / binFrames);
+if nBins < 1, return; end
+nKeep = nBins * binFrames;
+binTimes = mean(reshape(t(1:nKeep), binFrames, nBins), 1);
+
+for factor = 1:size(diagnostics.ensemble_vectors, 2)
+    poolIndex = round(pools(:, 3, factor));
+    coreCells = unique(poolIndex(isfinite(poolIndex) & poolIndex >= 1 & poolIndex <= nCells));
+    nCore = numel(coreCells);
+    if nCore == 0, continue; end
+    syncThreshold = max(1, ceil(nCore / 2));
+    ensembleFrames = diagnostics.significant_frames( ...
+        diagnostics.ensemble_vectors(:, factor) > 0);
+    ensembleFrames = ensembleFrames(ensembleFrames >= 1 & ensembleFrames <= nFrames);
+    ensembleOn = false(1, nFrames);
+    ensembleOn(ensembleFrames) = true;
+    ensembleBins = mean(reshape(double(ensembleOn(1:nKeep)), binFrames, nBins), 1);
+    coreCounts = sum(spikes(coreCells, 1:nKeep), 1);
+    coreBins = mean(reshape(coreCounts, binFrames, nBins), 1);
+    coreSyncFraction = mean(coreBins >= syncThreshold);
+    ensembleCoreCorr = NaN;
+    if std(ensembleBins) > 0 && std(coreBins) > 0
+        ensembleCoreCorr = corr(ensembleBins(:), coreBins(:));
+    end
+    identityBins = zeros(nShuffles, nBins);
+    shiftBins = zeros(nShuffles, nBins);
+    identitySync = zeros(nShuffles, 1);
+    shiftSync = zeros(nShuffles, 1);
+
+    seed = 20260925 + sum(double(animal)) + sum(double(dayName)) + factor;
+    rng(seed, 'twister');
+    for sh = 1:nShuffles
+        randomCells = randperm(nCells, nCore);
+        randomCounts = sum(spikes(randomCells, 1:nKeep), 1);
+        identityBins(sh, :) = mean(reshape(randomCounts, binFrames, nBins), 1);
+        identitySync(sh) = mean(identityBins(sh, :) >= syncThreshold);
+
+        shifted = spikes(coreCells, 1:nKeep);
+        for ci = 1:nCore
+            shiftAmount = randi(max(nKeep - 1, 1));
+            shifted(ci, :) = circshift(shifted(ci, :), [0 shiftAmount]);
+        end
+        shiftedCounts = sum(shifted, 1);
+        shiftBins(sh, :) = mean(reshape(shiftedCounts, binFrames, nBins), 1);
+        shiftSync(sh) = mean(shiftBins(sh, :) >= syncThreshold);
+    end
+
+    idP = (1 + sum(identitySync >= coreSyncFraction)) / (nShuffles + 1);
+    shiftP = (1 + sum(shiftSync >= coreSyncFraction)) / (nShuffles + 1);
+    rows(end + 1, :) = {animal, dayName, sessionFile, phase, factor, nCore, ...
+        ensembleCoreCorr, coreSyncFraction, mean(identitySync), prctile(identitySync, 95), idP, ...
+        mean(shiftSync), prctile(shiftSync, 95), shiftP}; %#ok<AGROW>
+
+    idLo = prctile(identityBins, 5, 1);
+    idHi = prctile(identityBins, 95, 1);
+    shiftLo = prctile(shiftBins, 5, 1);
+    shiftHi = prctile(shiftBins, 95, 1);
+    fig = figure('Visible', 'off', 'Color', 'w');
+    subplot(3, 1, 1); hold on;
+    stairs(binTimes, ensembleBins, 'Color', [0.15 0.55 0.25], 'LineWidth', 1);
+    ylim([-0.05 1.05]);
+    ylabel('Ensemble');
+    title(sprintf('%s ensemble %d: SVD activity and core checks', phase, factor));
+    subplot(3, 1, 2); hold on;
+    fill([binTimes fliplr(binTimes)], [idLo fliplr(idHi)], [0.82 0.82 0.82], ...
+        'EdgeColor', 'none', 'FaceAlpha', 0.5);
+    plot(binTimes, mean(identityBins, 1), 'Color', [0.35 0.35 0.35], 'LineWidth', 1);
+    plot(binTimes, coreBins, 'Color', [0.85 0.20 0.16], 'LineWidth', 1.1);
+    ylabel('Core cells active / 0.5 s');
+    title('Core IDs vs random neuron IDs at the same times');
+    legend('Random-ID 5-95%', 'Random-ID mean', 'Observed core', 'Location', 'best');
+    subplot(3, 1, 3); hold on;
+    fill([binTimes fliplr(binTimes)], [shiftLo fliplr(shiftHi)], [0.78 0.84 0.92], ...
+        'EdgeColor', 'none', 'FaceAlpha', 0.55);
+    plot(binTimes, mean(shiftBins, 1), 'Color', [0.25 0.42 0.68], 'LineWidth', 1);
+    plot(binTimes, coreBins, 'Color', [0.85 0.20 0.16], 'LineWidth', 1.1);
+    xlabel('Time (s)');
+    ylabel('Core cells active / 0.5 s');
+    title('Same core IDs, each neuron independently time-shifted');
+    legend('Time-shift 5-95%', 'Time-shift mean', 'Observed core', 'Location', 'best');
+    saveas(fig, fullfile(folder, sprintf('core_vs_shuffled_%02d.png', factor)));
+    close(fig);
 end
 end
 
@@ -289,11 +427,12 @@ for p1 = 1:numel(coreSets)
 end
 end
 
-function writeOutputs(outDir, summaryRows, coreRows, overlapRows)
+function writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
+    ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows)
 if ~isempty(summaryRows)
     T = cell2table(summaryRows, 'VariableNames', {'animal','day_name','session','phase', ...
-        'n_cells','n_common_cells','event_fraction','fallback_cells','mapping_valid', ...
-        'n_ensembles','n_core_memberships','status'});
+        'n_cells','n_common_cells','event_fraction','median_threshold_sd','mapping_valid', ...
+        'pks','n_significant_vectors','scut','hcut','n_ensembles','n_core_memberships','status'});
     writetable(T, fullfile(outDir, 'phase_summary.csv'));
 end
 if ~isempty(coreRows)
@@ -307,15 +446,45 @@ if ~isempty(overlapRows)
         'jaccard','p_permutation_unadjusted'});
     writetable(T, fullfile(outDir, 'core_overlap.csv'));
 end
+if ~isempty(thresholdRows)
+    T = cell2table(thresholdRows, 'VariableNames', {'animal','day_name','session', ...
+        'phase','local_cell_index','mapped_cell_id','S_threshold'});
+    writetable(T, fullfile(outDir, 'event_thresholds.csv'));
+end
+if ~isempty(ensembleRows)
+    T = cell2table(ensembleRows, 'VariableNames', {'animal','day_name','session','phase', ...
+        'ensemble','local_cell_index','mapped_cell_id','is_core'});
+    writetable(T, fullfile(outDir, 'ensemble_members.csv'));
+end
+if ~isempty(singularRows)
+    T = cell2table(singularRows, 'VariableNames', {'animal','day_name','session','phase', ...
+        'singular_rank','singular_value','selected_by_stoixeion'});
+    writetable(T, fullfile(outDir, 'singular_values.csv'));
+end
+if ~isempty(ensembleActivityRows)
+    T = cell2table(ensembleActivityRows, 'VariableNames', {'animal','day_name','session', ...
+        'phase','frame','time_s','ensemble'});
+    writetable(T, fullfile(outDir, 'ensemble_activity.csv'));
+end
+if ~isempty(coreShuffleRows)
+    T = cell2table(coreShuffleRows, 'VariableNames', {'animal','day_name','session', ...
+        'phase','ensemble','n_core_cells','ensemble_core_corr','observed_sync_fraction', ...
+        'random_ID_null_mean','random_ID_null_95','random_ID_p_unadjusted', ...
+        'time_shift_null_mean','time_shift_null_95','time_shift_p_unadjusted'});
+    writetable(T, fullfile(outDir, 'core_shuffle_summary.csv'));
+end
 end
 
 function writeProtocol(outDir, selection, dataDir, stoixeionDir)
 fid = fopen(fullfile(outDir, 'protocol.txt'), 'w');
 fprintf(fid, 'Selection: %s\nData: %s\nStoixeion: %s\n', selection, dataDir, stoixeionDir);
 fprintf(fid, 'Each phase is analyzed independently on cells mapped across all four phases when available.\n');
-fprintf(fid, 'Raster: positive dC/dt > quiescent-frame mean + 3 SD; quiet frames are S <= 0.\n');
+fprintf(fid, 'Raster: CaImAn S > 3 * SD(S), calculated separately per cell and phase.\n');
 fprintf(fid, 'Stoixeion defaults are retained: automatic pks/scut, TF-IDF, hcut=0.28, SVD and core selection.\n');
-fprintf(fid, 'Core overlap is a separate exploratory Jaccard test with 999 identity permutations; p values are unadjusted.\n');
+fprintf(fid, 'Core overlap uses Jaccard with 999 identity permutations.\n');
+fprintf(fid, 'Core activity controls: random neuron IDs at the same times and independent circular shifts of the same core cells.\n');
+fprintf(fid, 'All overlap and shuffle p values are exploratory and unadjusted.\n');
+fprintf(fid, 'Stoixeion export patch exposes existing internal outputs; the detection steps are unchanged.\n');
 fprintf(fid, 'Figure 10 is omitted because source cell centroids are not in the merged MAT files.\n');
 fclose(fid);
 end
