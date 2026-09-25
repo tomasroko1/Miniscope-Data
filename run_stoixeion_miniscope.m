@@ -1,6 +1,6 @@
 function run_stoixeion_miniscope(selection, dataDir, stoixeionDir, outDir)
-% Run Stoixeion on CaImAn activity, independently for each phase.
-% Selections: pilot, sd, habl, primary, or an animal_session stem.
+% Run Stoixeion phasewise and on a four-phase concatenated population raster.
+% Selections: pilot, global, phasewise, sd, xss, habl, all4, primary, or a session stem.
 
 rootDir = fileparts(mfilename('fullpath'));
 if nargin < 1 || isempty(selection), selection = 'pilot'; end
@@ -40,6 +40,7 @@ ensembleActivityRows = {};
 overlapRows = {};
 thresholdRows = {};
 coreShuffleRows = {};
+globalFactorPhaseRows = {};
 animals = dir(fullfile(dataDir, 'R*'));
 animals = animals([animals.isdir]);
 
@@ -110,10 +111,15 @@ for ai = 1:numel(animals)
                 phaseColumns{pi} = 1:size(phaseS{pi}, 2);
             end
             nCellsUsed = NaN;
-            fprintf('[AVISO] %s: mapping no verificable; núcleos quedarán locales por fase.\n', sessionID);
+            fprintf('[AVISO] %s: mapping no verificable; los cores quedan locales por fase.\n', sessionID);
         end
 
-        if strcmp(dayName, 'HabL')
+        if strcmpi(selection, 'global') && ~mappingOK
+            fprintf('[OMITIDA GLOBAL] %s: hace falta mapping valido en las cuatro fases.\n', sessionID);
+            continue;
+        end
+
+        if strcmpi(dayName, 'HabL')
             phaseNames = {'OF1', 'OF2', 'OF3', 'OF4'};
         else
             phaseNames = {'OF1', 'SAMPLE', 'TEST', 'OF2'};
@@ -123,6 +129,10 @@ for ai = 1:numel(animals)
         phaseSuccess = false(1, nPhases);
         dayOut = fullfile(outDir, animal, dayName, sessionStem);
         for pi = 1:nPhases
+            if strcmpi(selection, 'global')
+                phaseSuccess(pi) = true;
+                continue;
+            end
             phaseOut = fullfile(dayOut, phaseNames{pi});
             if exist(phaseOut, 'dir') ~= 7, mkdir(phaseOut); end
             try
@@ -215,7 +225,7 @@ for ai = 1:numel(animals)
                     diagnostics.pks, numel(diagnostics.significant_frames), diagnostics.scut, ...
                     diagnostics.hcut, nFactors, coreCount, 'ok'}; %#ok<AGROW>
                 phaseSuccess(pi) = true;
-                fprintf('[OK] %s %s: %d células, %d factores.\n', ...
+                fprintf('[OK] %s %s: %d celulas, %d factores.\n', ...
                     sessionID, phaseNames{pi}, nPhaseCells, nFactors);
             catch ME
                 close all force;
@@ -225,26 +235,63 @@ for ai = 1:numel(animals)
                 fprintf('[FALLO] %s %s: %s\n', sessionID, phaseNames{pi}, ME.message);
             end
             writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
-                ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows);
+                ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows, globalFactorPhaseRows);
         end
 
         if mappingOK && all(phaseSuccess)
-            newOverlap = comparePhaseCores(phaseCoreSets, phaseNames, commonRows - 1, ...
-                animal, dayName, sessionFile, 999);
-            if ~isempty(newOverlap)
-                if isempty(overlapRows)
-                    overlapRows = newOverlap;
-                else
-                    overlapRows = [overlapRows; newOverlap]; %#ok<AGROW>
+            if ~strcmpi(selection, 'global')
+                newOverlap = comparePhaseCores(phaseCoreSets, phaseNames, commonRows - 1, ...
+                    animal, dayName, sessionFile, 999);
+                if ~isempty(newOverlap)
+                    if isempty(overlapRows)
+                        overlapRows = newOverlap;
+                    else
+                        overlapRows = [overlapRows; newOverlap]; %#ok<AGROW>
+                    end
+                end
+            end
+
+            if ~strcmpi(selection, 'phasewise')
+                try
+                    globalResult = runGlobalConcatenated(phaseS, phaseT, phaseNames, phaseColumns, ...
+                        commonRows, animal, dayName, sessionFile, nCellsUsed, dayOut);
+                    if ~isempty(globalResult.summaryRows)
+                        summaryRows = [summaryRows; globalResult.summaryRows]; %#ok<AGROW>
+                    end
+                    if ~isempty(globalResult.coreRows)
+                        coreRows = [coreRows; globalResult.coreRows]; %#ok<AGROW>
+                    end
+                    if ~isempty(globalResult.ensembleRows)
+                        ensembleRows = [ensembleRows; globalResult.ensembleRows]; %#ok<AGROW>
+                    end
+                    if ~isempty(globalResult.singularRows)
+                        singularRows = [singularRows; globalResult.singularRows]; %#ok<AGROW>
+                    end
+                    if ~isempty(globalResult.ensembleActivityRows)
+                        ensembleActivityRows = [ensembleActivityRows; globalResult.ensembleActivityRows]; %#ok<AGROW>
+                    end
+                    if ~isempty(globalResult.thresholdRows)
+                        thresholdRows = [thresholdRows; globalResult.thresholdRows]; %#ok<AGROW>
+                    end
+                    if ~isempty(globalResult.coreShuffleRows)
+                        coreShuffleRows = [coreShuffleRows; globalResult.coreShuffleRows]; %#ok<AGROW>
+                    end
+                    if ~isempty(globalResult.globalFactorPhaseRows)
+                        globalFactorPhaseRows = [globalFactorPhaseRows; globalResult.globalFactorPhaseRows]; %#ok<AGROW>
+                    end
+                catch ME
+                    summaryRows(end + 1, :) = {animal, dayName, sessionFile, 'GLOBAL_CONCAT', ...
+                        nCellsUsed, nCellsUsed, NaN, NaN, mappingOK, NaN, NaN, NaN, NaN, NaN, NaN, ME.message}; %#ok<AGROW>
+                    fprintf('[FALLO GLOBAL] %s: %s\n', sessionID, ME.message);
                 end
             end
             writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
-                ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows);
+                ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows, globalFactorPhaseRows);
         end
     end
 end
 writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
-    ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows);
+    ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows, globalFactorPhaseRows);
 fprintf('Resultados: %s\n', outDir);
 end
 
@@ -253,11 +300,25 @@ switch lower(selection)
     case 'pilot'
         yes = strcmp(animal, 'R005') && strcmp(dayName, 'T1_SD_VEH');
     case 'sd'
-        yes = ~isempty(strfind(dayName, '_SD_')); %#ok<STREMP>
+        yes = ~isempty(strfind(lower(dayName), '_sd_')); %#ok<STREMP>
+    case 'xss'
+        yes = ~isempty(strfind(lower(dayName), '_xss_')); %#ok<STREMP>
     case 'habl'
-        yes = strcmp(dayName, 'HabL');
+        yes = strcmpi(dayName, 'HabL');
+    case 'all4'
+        yes = true;
+    case 'global'
+        lowerDay = lower(dayName);
+        yes = strcmpi(dayName, 'HabL') || ~isempty(strfind(lowerDay, '_sd_')) || ...
+            ~isempty(strfind(lowerDay, '_xss_')); %#ok<STREMP>
+    case 'phasewise'
+        lowerDay = lower(dayName);
+        yes = strcmpi(dayName, 'HabL') || ~isempty(strfind(lowerDay, '_sd_')) || ...
+            ~isempty(strfind(lowerDay, '_xss_')); %#ok<STREMP>
     case 'primary'
-        yes = strcmp(dayName, 'HabL') || ~isempty(strfind(dayName, '_SD_')); %#ok<STREMP>
+        lowerDay = lower(dayName);
+        yes = strcmpi(dayName, 'HabL') || ~isempty(strfind(lowerDay, '_sd_')) || ...
+            ~isempty(strfind(lowerDay, '_xss_')); %#ok<STREMP>
     otherwise
         yes = strcmp(sessionID, selection);
 end
@@ -296,13 +357,180 @@ end
 activeFraction = mean(spikes(:));
 end
 
-function saveStoixeionFigures(folder)
+function saveStoixeionFigures(folder, maxFigure)
+if nargin < 2, maxFigure = 9; end
 figures = findall(groot, 'Type', 'figure');
 for k = 1:numel(figures)
     number = get(figures(k), 'Number');
-    if number < 1 || number > 9, continue; end
+    if number < 1 || number > maxFigure, continue; end
     saveas(figures(k), fullfile(folder, sprintf('stoixeion_%02d.png', number)));
 end
+end
+
+function result = runGlobalConcatenated(phaseS, phaseT, phaseNames, phaseColumns, ...
+    commonRows, animal, dayName, sessionFile, nCellsUsed, dayOut)
+result.summaryRows = {};
+result.coreRows = {};
+result.ensembleRows = {};
+result.singularRows = {};
+result.ensembleActivityRows = {};
+result.thresholdRows = {};
+result.coreShuffleRows = {};
+result.globalFactorPhaseRows = {};
+
+nPhases = numel(phaseNames);
+phaseRaw = cell(1, nPhases);
+phaseTimes = cell(1, nPhases);
+frameRanges = zeros(nPhases, 2);
+phaseDurations = zeros(1, nPhases);
+cursor = 1;
+for pi = 1:nPhases
+    S = double(phaseS{pi});
+    S = S(:, phaseColumns{pi});
+    t = double(phaseT{pi}(:));
+    if size(S, 1) ~= numel(t)
+        error('S y t no coinciden en la fase %s.', phaseNames{pi});
+    end
+    phaseRaw{pi} = S;
+    phaseTimes{pi} = t;
+    frameRanges(pi, :) = [cursor, cursor + size(S, 1) - 1];
+    cursor = frameRanges(pi, 2) + 1;
+    dt = diff(t);
+    dt = dt(isfinite(dt) & dt > 0);
+    if isempty(dt), medianDt = 0.05; else, medianDt = median(dt); end
+    finiteTimes = t(isfinite(t));
+    if isempty(finiteTimes)
+        phaseDurations(pi) = size(S, 1) * medianDt;
+    else
+        phaseDurations(pi) = max(finiteTimes) - min(finiteTimes) + medianDt;
+    end
+end
+
+allS = vertcat(phaseRaw{:});
+[spikes, activeFraction, thresholds] = binarizePhase(allS, 3);
+nCells = size(spikes, 1);
+coords = [(1:nCells)' zeros(nCells, 1)];
+globalOut = fullfile(dayOut, 'GLOBAL_CONCATENATED');
+if exist(globalOut, 'dir') ~= 7, mkdir(globalOut); end
+
+close all force;
+[pools, diagnostics] = Stoixeion(spikes, coords, []);
+if size(diagnostics.ensemble_vectors, 1) ~= numel(diagnostics.significant_frames)
+    error('Stoixeion devolvio vectores y marcos significativos desalineados.');
+end
+saveStoixeionFigures(globalOut, 8);
+close all force;
+
+nFactors = size(diagnostics.ensemble_vectors, 2);
+coreCount = 0;
+for factor = 1:nFactors
+    poolIndex = round(pools(:, 3, factor));
+    localCells = unique(poolIndex(isfinite(poolIndex) & poolIndex >= 1 & poolIndex <= nCells));
+    coreCount = coreCount + numel(localCells);
+    for ci = 1:numel(localCells)
+        localCell = localCells(ci);
+        mappedID = commonRows(localCell) - 1;
+        result.coreRows(end + 1, :) = {animal, dayName, sessionFile, ...
+            'GLOBAL_CONCAT', factor, localCell, mappedID}; %#ok<AGROW>
+    end
+    allCells = find(diagnostics.all_ensemble_cells(:, factor) > 0);
+    for ci = 1:numel(allCells)
+        localCell = allCells(ci);
+        mappedID = commonRows(localCell) - 1;
+        result.ensembleRows(end + 1, :) = {animal, dayName, sessionFile, ...
+            'GLOBAL_CONCAT', factor, localCell, mappedID, ismember(localCell, localCells)}; %#ok<AGROW>
+    end
+end
+
+for rank = 1:numel(diagnostics.singular_values)
+    result.singularRows(end + 1, :) = {animal, dayName, sessionFile, ...
+        'GLOBAL_CONCAT', rank, diagnostics.singular_values(rank), ...
+        ismember(rank, diagnostics.selected_singular_ranks)}; %#ok<AGROW>
+end
+validThresholds = thresholds(isfinite(thresholds));
+if isempty(validThresholds), medianThreshold = NaN;
+else, medianThreshold = median(validThresholds); end
+result.summaryRows(1, :) = {animal, dayName, sessionFile, 'GLOBAL_CONCAT', ...
+    nCells, nCellsUsed, activeFraction, medianThreshold, true, diagnostics.pks, ...
+    numel(diagnostics.significant_frames), diagnostics.scut, diagnostics.hcut, ...
+    nFactors, coreCount, 'ok'};
+for ci = 1:nCells
+    result.thresholdRows(end + 1, :) = {animal, dayName, sessionFile, ...
+        'GLOBAL_CONCAT', ci, commonRows(ci) - 1, thresholds(ci)}; %#ok<AGROW>
+end
+
+rateMatrix = zeros(nFactors, nPhases);
+for factor = 1:nFactors
+    factorFrames = diagnostics.significant_frames(diagnostics.ensemble_vectors(:, factor) > 0);
+    for pi = 1:nPhases
+        firstFrame = frameRanges(pi, 1);
+        lastFrame = frameRanges(pi, 2);
+        inPhase = factorFrames >= firstFrame & factorFrames <= lastFrame;
+        nFactorVectors = sum(inPhase);
+        nPhaseVectors = sum(diagnostics.significant_frames >= firstFrame & ...
+            diagnostics.significant_frames <= lastFrame);
+        if nPhaseVectors == 0, fraction = NaN;
+        else, fraction = nFactorVectors / nPhaseVectors; end
+        duration = phaseDurations(pi);
+        if duration > 0, rate = nFactorVectors / duration * 60;
+        else, rate = NaN; end
+        rateMatrix(factor, pi) = rate;
+        result.globalFactorPhaseRows(end + 1, :) = {animal, dayName, sessionFile, ...
+            factor, phaseNames{pi}, size(phaseRaw{pi}, 1), duration, nPhaseVectors, ...
+            nFactorVectors, rate, fraction}; %#ok<AGROW>
+    end
+end
+saveGlobalFactorPhaseFigure(rateMatrix, phaseNames, globalOut, animal, dayName);
+
+for vec = 1:size(diagnostics.ensemble_vectors, 1)
+    globalFrame = diagnostics.significant_frames(vec);
+    pi = find(globalFrame >= frameRanges(:, 1) & globalFrame <= frameRanges(:, 2), 1);
+    if isempty(pi), continue; end
+    localFrame = globalFrame - frameRanges(pi, 1) + 1;
+    activeFactors = find(diagnostics.ensemble_vectors(vec, :) > 0);
+    for factor = activeFactors
+        result.ensembleActivityRows(end + 1, :) = {animal, dayName, sessionFile, ...
+            ['GLOBAL_' phaseNames{pi}], globalFrame, phaseTimes{pi}(localFrame), factor}; %#ok<AGROW>
+    end
+end
+
+for pi = 1:nPhases
+    firstFrame = frameRanges(pi, 1);
+    lastFrame = frameRanges(pi, 2);
+    vectorMask = diagnostics.significant_frames >= firstFrame & ...
+        diagnostics.significant_frames <= lastFrame;
+    phaseDiagnostics = diagnostics;
+    phaseDiagnostics.significant_frames = diagnostics.significant_frames(vectorMask) - firstFrame + 1;
+    phaseDiagnostics.ensemble_vectors = diagnostics.ensemble_vectors(vectorMask, :);
+    phaseSpikes = spikes(:, firstFrame:lastFrame);
+    phaseOut = fullfile(globalOut, phaseNames{pi});
+    if exist(phaseOut, 'dir') ~= 7, mkdir(phaseOut); end
+    phaseShuffleRows = plotCoreVsShuffled(phaseSpikes, pools, phaseDiagnostics, ...
+        phaseTimes{pi}, phaseOut, animal, dayName, sessionFile, ...
+        ['GLOBAL_' phaseNames{pi}], 199);
+    if ~isempty(phaseShuffleRows)
+        result.coreShuffleRows = [result.coreShuffleRows; phaseShuffleRows]; %#ok<AGROW>
+    end
+end
+end
+
+function saveGlobalFactorPhaseFigure(rateMatrix, phaseNames, folder, animal, dayName)
+fig = figure('Visible', 'off', 'Color', 'w');
+if isempty(rateMatrix)
+    axis off;
+    text(0.5, 0.5, 'Stoixeion no selecciono factores globales', ...
+        'HorizontalAlignment', 'center');
+else
+    imagesc(rateMatrix);
+    set(gca, 'YDir', 'normal', 'XTick', 1:numel(phaseNames), 'XTickLabel', phaseNames, ...
+        'YTick', 1:size(rateMatrix, 1));
+    xlabel('Fase');
+    ylabel('Ensemble global');
+    title(sprintf('%s | %s | vectores significativos por minuto', animal, dayName));
+    colorbar;
+end
+saveas(fig, fullfile(folder, 'global_factor_phase_activity.png'));
+close(fig);
 end
 
 function rows = plotCoreVsShuffled(spikes, pools, diagnostics, t, folder, animal, dayName, sessionFile, phase, nShuffles)
@@ -428,7 +656,7 @@ end
 end
 
 function writeOutputs(outDir, summaryRows, coreRows, ensembleRows, singularRows, ...
-    ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows)
+    ensembleActivityRows, overlapRows, thresholdRows, coreShuffleRows, globalFactorPhaseRows)
 if ~isempty(summaryRows)
     T = cell2table(summaryRows, 'VariableNames', {'animal','day_name','session','phase', ...
         'n_cells','n_common_cells','event_fraction','median_threshold_sd','mapping_valid', ...
@@ -473,18 +701,43 @@ if ~isempty(coreShuffleRows)
         'time_shift_null_mean','time_shift_null_95','time_shift_p_unadjusted'});
     writetable(T, fullfile(outDir, 'core_shuffle_summary.csv'));
 end
+if ~isempty(globalFactorPhaseRows)
+    T = cell2table(globalFactorPhaseRows, 'VariableNames', {'animal','day_name','session', ...
+        'ensemble','phase','n_phase_frames','phase_duration_s','n_significant_vectors', ...
+        'factor_vectors','factor_vectors_per_min','fraction_significant_vectors'});
+    writetable(T, fullfile(outDir, 'global_factor_phase_activity.csv'));
+end
 end
 
 function writeProtocol(outDir, selection, dataDir, stoixeionDir)
 fid = fopen(fullfile(outDir, 'protocol.txt'), 'w');
 fprintf(fid, 'Selection: %s\nData: %s\nStoixeion: %s\n', selection, dataDir, stoixeionDir);
-fprintf(fid, 'Each phase is analyzed independently on cells mapped across all four phases when available.\n');
-fprintf(fid, 'Raster: CaImAn S > 3 * SD(S), calculated separately per cell and phase.\n');
+if strcmpi(selection, 'global')
+    fprintf(fid, 'Only the four-phase concatenated analysis is run; standalone phasewise detection is skipped.\n');
+elseif strcmpi(selection, 'phasewise')
+    fprintf(fid, 'Only standalone phasewise detection is run; concatenated detection is skipped.\n');
+else
+    fprintf(fid, 'Each phase is analyzed independently on cells mapped across all four phases when available.\n');
+end
+if ~strcmpi(selection, 'global')
+    fprintf(fid, 'Phasewise raster: CaImAn S > 3 * SD(S), calculated per cell and phase.\n');
+end
+if ~strcmpi(selection, 'phasewise')
+    fprintf(fid, 'Global raster: the four phases are concatenated and thresholded with one pooled per-cell SD(S).\n');
+end
 fprintf(fid, 'Stoixeion defaults are retained: automatic pks/scut, TF-IDF, hcut=0.28, SVD and core selection.\n');
+if ~strcmpi(selection, 'phasewise')
+    fprintf(fid, 'Global factors are detected once across the four phases; activation counts are assigned back to the original phases.\n');
+    fprintf(fid, 'The global null shuffles across the concatenated raster and does not preserve phase-specific rates; interpret it as exploratory and check phasewise results.\n');
+    fprintf(fid, 'Global fitting is weighted by the number of significant vectors contributed by each phase; reported phase rates are normalized by duration.\n');
+end
 fprintf(fid, 'Core overlap uses Jaccard with 999 identity permutations.\n');
 fprintf(fid, 'Core activity controls: random neuron IDs at the same times and independent circular shifts of the same core cells.\n');
 fprintf(fid, 'All overlap and shuffle p values are exploratory and unadjusted.\n');
 fprintf(fid, 'Stoixeion export patch exposes existing internal outputs; the detection steps are unchanged.\n');
-fprintf(fid, 'Figure 10 is omitted because source cell centroids are not in the merged MAT files.\n');
+if ~strcmpi(selection, 'phasewise')
+    fprintf(fid, 'Figure 9 is omitted for the global call because sequence correlations can cross phase boundaries.\n');
+end
+fprintf(fid, 'Spatial figures are omitted because source cell centroids are not in the merged MAT files.\n');
 fclose(fid);
 end
