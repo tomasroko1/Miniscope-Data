@@ -16,7 +16,141 @@ from core.data_loader import (
     load_session,
     mapping_columns,
 )
-from core.place_fields import compute_rate_map, draw_neuron_analysis, threshold_event_frames
+from core.place_fields import gaussian_rate_maps_matlab
+
+
+ARENA_RADIUS_CM = 25.0
+BIN_SIZE_CM = 1.0
+SIGMA_CM = 4.0
+
+
+def _phase_names(day_name, n_subsessions):
+    if n_subsessions == 1:
+        return [day_name or "Registro"]
+    if day_name == "HabL":
+        return ["OF1", "OF2", "OF3", "OF4"]
+    if "_SD_" in day_name or "_XsS_" in day_name:
+        return ["OF1", "SAMPLE", "TEST", "OF2"]
+    return [f"Sub {index + 1}" for index in range(n_subsessions)]
+
+
+def _prepare_rate_maps(subsessions):
+    """Use the same continuous-S Gaussian rate-map recipe as the HabL gallery."""
+    caches = []
+    for sub in subsessions:
+        x = np.asarray(sub["x"], dtype=float)
+        y = np.asarray(sub["y"], dtype=float)
+        t = np.asarray(sub["t"], dtype=float)
+        raw_s = np.asarray(sub["S"], dtype=float)
+        valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(t)
+        valid &= np.isfinite(raw_s).all(axis=1)
+        x, y, t = x[valid], y[valid], t[valid]
+        positive_s = np.maximum(raw_s[valid], 0.0).astype(np.float32)
+        rates, edges, meta = gaussian_rate_maps_matlab(
+            x, y, t, positive_s,
+            bin_size=BIN_SIZE_CM,
+            sigma=SIGMA_CM,
+            arena_radius=ARENA_RADIUS_CM,
+        )
+        caches.append({
+            "x": x, "y": y, "t": t, "S": positive_s,
+            "rates": rates, "edges": edges,
+            "sample_rate_hz": meta["sample_rate_hz"],
+        })
+    return caches
+
+
+def _style_axis(ax):
+    ax.set_aspect("equal")
+    ax.set_xlim(-ARENA_RADIUS_CM, ARENA_RADIUS_CM)
+    ax.set_ylim(-ARENA_RADIUS_CM, ARENA_RADIUS_CM)
+    ax.set_xticks((-25, 0, 25))
+    ax.set_yticks((-25, 0, 25))
+    ax.tick_params(labelsize=6)
+
+
+def _render_cell_figure(animal, cell_label, cell_filename, columns,
+                        caches, phase_names, output_dir):
+    """Draw trajectory/S amplitude and continuous-S rate map; save PNG only."""
+    n_phases = len(caches)
+    fig, axes = plt.subplots(2, n_phases, figsize=(3.2 * n_phases, 6.2), squeeze=False)
+    present = []
+    for phase_index, cache in enumerate(caches):
+        ax_trajectory = axes[0, phase_index]
+        ax_map = axes[1, phase_index]
+        _style_axis(ax_trajectory)
+        _style_axis(ax_map)
+        local_column, local_id = columns[phase_index]
+        signal = cache["S"][:, local_column]
+        positive = signal > 0
+        n_positive = int(positive.sum())
+        rate_map = cache["rates"][local_column]
+        finite_rate = rate_map[np.isfinite(rate_map)]
+        peak_rate = float(np.max(finite_rate)) if finite_rate.size else 0.0
+        present.append(phase_names[phase_index])
+
+        ax_trajectory.plot(
+            cache["x"], cache["y"], color="0.82", linewidth=.3,
+            rasterized=True, zorder=1,
+        )
+        if n_positive:
+            scatter = ax_trajectory.scatter(
+                cache["x"][positive], cache["y"][positive],
+                c=signal[positive], cmap="turbo", vmin=0,
+                vmax=float(np.max(signal[positive])), s=4.5, alpha=.85,
+                linewidths=0, rasterized=True, zorder=2,
+            )
+            cb = fig.colorbar(scatter, ax=ax_trajectory, fraction=.046, pad=.03)
+            cb.ax.tick_params(labelsize=6)
+            cb.set_label("S", fontsize=6)
+        ax_trajectory.set_title(
+            f"{phase_names[phase_index]} (local {local_id})\n{n_positive} S > 0 samples",
+            fontsize=8,
+        )
+
+        edges = cache["edges"]
+        cmap = plt.cm.turbo.copy()
+        cmap.set_bad(color="white")
+        image = ax_map.imshow(
+            rate_map.T, origin="lower",
+            extent=[edges[0], edges[-1], edges[0], edges[-1]],
+            cmap=cmap, vmin=0, vmax=peak_rate if peak_rate > 0 else 1,
+            interpolation="nearest", rasterized=True,
+        )
+        cb = fig.colorbar(image, ax=ax_map, fraction=.046, pad=.03)
+        cb.ax.tick_params(labelsize=6)
+        cb.set_label("act/s", fontsize=6)
+        ax_map.set_title(f"Activity rate map\nmax: {peak_rate:.2f} act/s", fontsize=8)
+
+    fig.suptitle(
+        f"{animal} | {cell_label} | Tracked in {n_phases}/{n_phases} phases "
+        f"({','.join(present)})",
+        fontsize=11, fontweight="semibold", y=.985,
+    )
+    fig.tight_layout(rect=(0, 0, 1, .94), w_pad=.8, h_pad=.8)
+    fig.savefig(os.path.join(output_dir, cell_filename), dpi=130, facecolor="white")
+    plt.close(fig)
+
+
+def _process_local_only(animal, subsessions, session_out, phase_names):
+    """Draw local cells per phase if cross-phase CellReg mapping is ambiguous."""
+    total = 0
+    for phase_index, (sub, cache) in enumerate(zip(subsessions, _prepare_rate_maps(subsessions))):
+        local_out = os.path.join(session_out, f"phase_{phase_index + 1}_local_only")
+        os.makedirs(local_out, exist_ok=True)
+        columns = [(local_column, local_column) for local_column in range(sub["S"].shape[1])]
+        for local_column in range(sub["S"].shape[1]):
+            _render_cell_figure(
+                animal, f"local column {local_column}",
+                f"local_{local_column:04d}.png", [columns[local_column]],
+                [cache], [phase_names[phase_index]], local_out,
+            )
+            total += 1
+    print(
+        f"  Guardados {total} mapas locales en {session_out}; "
+        "no se enlazaron IDs entre fases.",
+        flush=True,
+    )
 
 
 def process_session(animal, session_file, data_dir=None, out_dir="results"):
@@ -24,15 +158,16 @@ def process_session(animal, session_file, data_dir=None, out_dir="results"):
     data = load_session(animal, session_file, data_dir=data_dir)
     session_out = os.path.join(out_dir, animal, session_file.replace(".mat", ""))
     os.makedirs(session_out, exist_ok=True)
+    subsessions = [data] if data["type"] == "simple" else data["subsessions"]
+    day_name = str(getattr(data.get("sess"), "day_name", ""))
+    phases = _phase_names(day_name, len(subsessions))
 
     if data["type"] == "simple":
-        subsessions = [data]
         common_neurons = np.arange(data["n_neurons"], dtype=int)
         columns_per_sub = [common_neurons.copy()]
         mapping = None
     else:
-        subsessions = data["subsessions"]
-        mapping = data["mapping"]
+        mapping = np.asarray(data["mapping"], dtype=float)
         common_neurons = get_common_neurons(mapping)
         try:
             columns_per_sub = [
@@ -42,125 +177,36 @@ def process_session(animal, session_file, data_dir=None, out_dir="results"):
         except ValueError as error:
             print(
                 f"  CellReg no alinea todas las fases ({error}). "
-                "Se guardarán mapas por neurona/fase, sin enlazar IDs.",
+                "Se guardarán mapas por fase, sin enlazar IDs.",
                 flush=True,
             )
-            _process_local_only(animal, subsessions, session_out)
+            _process_local_only(animal, subsessions, session_out, phases)
             return
 
     if len(common_neurons) == 0:
         if data["type"] == "merged":
-            print("  Sin IDs comunes a las cuatro fases; mapas por fase sin enlazar IDs.", flush=True)
-            _process_local_only(animal, subsessions, session_out)
+            print("  Sin IDs comunes a todas las fases; mapas locales por fase.", flush=True)
+            _process_local_only(animal, subsessions, session_out, phases)
             return
         print(f"  Sin neuronas: {animal} - {session_file}", flush=True)
         return
 
+    caches = _prepare_rate_maps(subsessions)
     common_index = {int(global_id): index for index, global_id in enumerate(common_neurons)}
-
     for global_id in common_neurons:
-        fig, axes = plt.subplots(
-            len(subsessions), 2, figsize=(10, 4 * len(subsessions))
+        columns = []
+        for phase_index in range(len(subsessions)):
+            local_column = int(columns_per_sub[phase_index][common_index[int(global_id)]])
+            local_id = (int(global_id) if mapping is None
+                        else int(mapping[global_id, phase_index]))
+            columns.append((local_column, local_id))
+        _render_cell_figure(
+            animal, f"Global cell {int(global_id):04d}",
+            f"neuron_{int(global_id):04d}.png", columns, caches, phases,
+            session_out,
         )
-        axes = np.atleast_2d(axes)
-        neuron_data = {}
 
-        for sub_index, sub in enumerate(subsessions):
-            column_index = common_index[int(global_id)]
-            local_id = int(columns_per_sub[sub_index][column_index])
-            if mapping is None:
-                local_original_id = int(global_id)
-            else:
-                local_original_id = mapping[global_id, sub_index]
-
-            signal = sub["S"][:, local_id]
-            events, threshold = threshold_event_frames(signal)
-            rate_map, x_bins, y_bins = compute_rate_map(
-                sub["x"], sub["y"], sub["t"], events,
-                bin_size=2.5,
-                sigma=2.5,
-            )
-            extent = [x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]]
-
-            neuron_data[f"sub_{sub_index}_rate_map"] = rate_map
-            neuron_data[f"sub_{sub_index}_events"] = events
-            neuron_data[f"sub_{sub_index}_threshold_3sd"] = threshold
-
-            ax_traj = axes[sub_index, 0]
-            ax_map = axes[sub_index, 1]
-            image = draw_neuron_analysis(
-                ax_traj,
-                ax_map,
-                sub["x"],
-                sub["y"],
-                events,
-                rate_map,
-                extent,
-                neuron_id=(
-                    f"Global {global_id} "
-                    f"(Local {local_original_id}->Col {local_id})"
-                ),
-            )
-            ax_traj.set_title(f"Sub {sub_index + 1} | {ax_traj.get_title()}")
-            ax_map.set_title(f"Sub {sub_index + 1} | {ax_map.get_title()}")
-            fig.colorbar(image, ax=ax_map, fraction=0.046, pad=0.04).set_label(
-                "eventos/s"
-            )
-
-        plt.tight_layout()
-        png_path = os.path.join(session_out, f"neuron_{int(global_id):04d}.png")
-        plt.savefig(png_path, dpi=100)
-        plt.close(fig)
-
-        npz_path = os.path.join(session_out, f"neuron_{int(global_id):04d}.npz")
-        np.savez_compressed(npz_path, **neuron_data)
-
-    print(
-        f"Listo: {len(common_neurons)} neuronas en {session_out}",
-        flush=True,
-    )
-
-
-def _process_local_only(animal, subsessions, session_out):
-    """Map every local column separately when global cross-phase IDs are unsafe."""
-    total = 0
-    for sub_index, sub in enumerate(subsessions):
-        local_out = os.path.join(session_out, f"subsession_{sub_index + 1}_local_only")
-        os.makedirs(local_out, exist_ok=True)
-        for local_col in range(sub["S"].shape[1]):
-            signal = sub["S"][:, local_col]
-            events, threshold = threshold_event_frames(signal)
-            rate_map, x_bins, y_bins = compute_rate_map(
-                sub["x"], sub["y"], sub["t"], events,
-                bin_size=2.5,
-                sigma=2.5,
-            )
-            extent = [x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]]
-            fig, axes = plt.subplots(1, 2, figsize=(8, 4), squeeze=False)
-            image = draw_neuron_analysis(
-                axes[0, 0], axes[0, 1], sub["x"], sub["y"], events,
-                rate_map, extent,
-                neuron_id=f"{animal} sub {sub_index + 1} local column {local_col}",
-            )
-            fig.colorbar(image, ax=axes[0, 1], fraction=0.046, pad=0.04).set_label(
-                "eventos/s"
-            )
-            fig.tight_layout()
-            stem = f"local_{local_col:04d}"
-            fig.savefig(os.path.join(local_out, f"{stem}.png"), dpi=100)
-            plt.close(fig)
-            np.savez_compressed(
-                os.path.join(local_out, f"{stem}.npz"),
-                rate_map=rate_map,
-                event_frames=events,
-                threshold_3sd=threshold,
-            )
-            total += 1
-    print(
-        f"  Listo: {total} mapas locales en {session_out}; "
-        "los IDs no se enlazan entre fases.",
-        flush=True,
-    )
+    print(f"Listos {len(common_neurons)} mapas en {session_out}", flush=True)
 
 
 def _session_day_name(animal, session_file, data_dir):
