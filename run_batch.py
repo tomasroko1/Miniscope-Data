@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 from pathlib import Path
 
 import matplotlib
@@ -153,10 +154,14 @@ def _process_local_only(animal, subsessions, session_out, phase_names):
     )
 
 
-def process_session(animal, session_file, data_dir=None, out_dir="results"):
+def process_session(animal, session_file, data_dir=None, out_dir="results",
+                    category_parts=None):
     print(f"Procesando {animal} - {session_file}...", flush=True)
     data = load_session(animal, session_file, data_dir=data_dir)
-    session_out = os.path.join(out_dir, animal, session_file.replace(".mat", ""))
+    session_out = os.path.join(
+        out_dir, animal, *(category_parts or ("Otros",)),
+        session_file.replace(".mat", ""),
+    )
     os.makedirs(session_out, exist_ok=True)
     subsessions = [data] if data["type"] == "simple" else data["subsessions"]
     day_name = str(getattr(data.get("sess"), "day_name", ""))
@@ -219,7 +224,20 @@ def _session_day_name(animal, session_file, data_dir):
     return str(getattr(sess, "day_name", "")) if sess is not None else ""
 
 
-def process_all(data_dir=None, out_dir="results", animal=None, session_file=None,
+def _session_category(day_name):
+    """Simple output folders derived from sess.day_name."""
+    if day_name == "HabL":
+        return ("HabL",)
+    if re.fullmatch(r"HabC\d*", day_name):
+        return (day_name,)
+    match = re.fullmatch(r"T\d+_(SD|XsS)_(CNO|VEH)_?", day_name)
+    if match:
+        task, treatment = match.groups()
+        return ("Objetos", task, treatment)
+    return ("Otros",)
+
+
+def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, session_file=None,
                 exclude_day_names=None):
     data_dir = data_dir or get_data_dir()
     excluded = set(exclude_day_names or ())
@@ -228,34 +246,33 @@ def process_all(data_dir=None, out_dir="results", animal=None, session_file=None
         if (animal is None or session["animal"] == animal)
         and (session_file is None or session["session_file"] == session_file)
     ]
-    if excluded:
-        kept = []
-        for session in sessions:
-            try:
-                day_name = _session_day_name(
-                    session["animal"], session["session_file"], data_dir
-                )
-            except (OSError, ValueError, KeyError):
-                day_name = ""
-            if day_name in excluded:
-                print(
-                    f"[EXCLUIDA] {session['animal']} / {session['session_file']} "
-                    f"(day_name={day_name})",
-                    flush=True,
-                )
-            else:
-                kept.append(session)
-        sessions = kept
-    if not sessions:
+    categorized = []
+    for session in sessions:
+        try:
+            day_name = _session_day_name(
+                session["animal"], session["session_file"], data_dir
+            )
+        except (OSError, ValueError, KeyError):
+            day_name = ""
+        if day_name in excluded:
+            print(
+                f"[EXCLUIDA] {session['animal']} / {session['session_file']} "
+                f"(day_name={day_name})",
+                flush=True,
+            )
+            continue
+        categorized.append((session, _session_category(day_name)))
+    if not categorized:
         raise SystemExit("No se encontraron sesiones que coincidan con los filtros.")
 
-    for session in sessions:
+    for session, category_parts in categorized:
         try:
             process_session(
                 session["animal"],
                 session["session_file"],
                 data_dir=data_dir,
                 out_dir=out_dir,
+                category_parts=category_parts,
             )
         except Exception as error:
             print(
@@ -271,7 +288,10 @@ def main():
     parser.add_argument("--animal", help="Procesar solamente un animal")
     parser.add_argument("--session", dest="session_file", help="Procesar solamente un archivo .mat")
     parser.add_argument("--data-dir", default=None, help="Carpeta con las carpetas de animales")
-    parser.add_argument("--out-dir", default="results", help="Carpeta de salida")
+    parser.add_argument(
+        "--out-dir", default="results/Mapas_por_tipo",
+        help="Carpeta base; se crean subcarpetas por animal y metadata de sesión",
+    )
     parser.add_argument(
         "--exclude-day", action="append", default=[],
         help="Excluir una etiqueta sess.day_name exacta; se puede repetir (p. ej. HabL)",
