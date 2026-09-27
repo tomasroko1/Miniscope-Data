@@ -1,16 +1,186 @@
+diff --git a/AGORA/Edos_from_Sindex_svd.m b/AGORA/Edos_from_Sindex_svd.m
+index c706393..7ec54a7 100644
+--- a/AGORA/Edos_from_Sindex_svd.m
++++ b/AGORA/Edos_from_Sindex_svd.m
+@@ -1,4 +1,4 @@
+-function [C_edos,sec_Pk_edos] = Edos_from_Sindex_svd(S_indexp,state_cut)
++function [C_edos,sec_Pk_edos,singular_values,selected_ranks] = Edos_from_Sindex_svd(S_indexp,state_cut)
+ % 
+ %LC2014. Feb 7
+ %Deteccion de estados usando conceptos de algebra lineal
+@@ -25,6 +25,7 @@ p = 0.05; %significant states need to appear at least 5% of the time to be consi
+ % do SVD on binarized similarity matrix
+ sz = size(S_indexp,2);
+ [U_svd,S_svd,V_svd] = svd(S_indexp);
++singular_values = diag(S_svd);
+ 
+ % binary search factor cut
+ % S_rec = U_svd*S_svd*V_svd';
+@@ -44,17 +45,20 @@ while dlt > 0
+     edos_temp2=find(edos_temp1./sum(edos_temp1)>=p);
+     num_state=size(edos_temp2,1);
+ 
+-    % find cells for each state
+-    svd_sig = zeros(sz,sz,num_state);
+-    for n = 1:num_state
+-        svd_sig(:,:,n) = (V_svd(:,edos_temp2(n))*V_svd(:,edos_temp2(n))'*S_svd(edos_temp2(n),edos_temp2(n)))>fac_cut;
+-    end
+-
+-    edos_rep = size(svd_sig,3);
+-    edos_pks_num = zeros(edos_rep,sz);
+-    for epi = 1:edos_rep % number of states
+-        edos_pks_num(epi,sum(svd_sig(:,:,epi))>0) = 1;
+-    end
++    % Find active columns one state at a time instead of storing a sz-by-sz
++    % matrix for every state.
++    edos_rep = num_state;
++    edos_pks_num = zeros(edos_rep,sz);
++    for epi = 1:edos_rep % number of states
++        rank = edos_temp2(epi);
++        v = V_svd(:,rank);
++        sv = S_svd(rank,rank);
++        maxPositive = max([0; v(v>0)]);
++        maxNegative = max([0; -v(v<0)]);
++        activeColumns = (v>0 & maxPositive*v*sv>fac_cut) | ...
++            (v<0 & maxNegative*(-v)*sv>fac_cut);
++        edos_pks_num(epi,activeColumns) = 1;
++    end
+     % To check that two edos do not overlap: figure; plot (sum (edos_pks_num));
+ 
+     if max(sum(edos_pks_num))>1
+@@ -83,7 +87,8 @@ while dlt > 0
+ %     end
+     
+ end
+-
++
++selected_ranks = edos_temp2(:);
+ %fac_cut=0.85;
+ 
+ 
+diff --git a/AXIS/Hdist.m b/AXIS/Hdist.m
+index dbd3ec0..91fad45 100644
+--- a/AXIS/Hdist.m
++++ b/AXIS/Hdist.m
+@@ -16,17 +16,17 @@
+ function [Hd]=Hdist(A)
+ 
+ N=size(A,2); %Número de picos
++if ~islogical(A) && any(A(:) ~= 0 & A(:) ~= 1)
++    A = double(A ~= 0);
++end
++present = sum(A,1);
+ Hd = zeros(N,N);
+-
+-for i=1:N
+-    for j=i:N
+-    Aa=A(:,i);
+-    Ab=A(:,j);
+-    
+-    Hi=sum(xor(Aa,Ab))/sum(or(Aa,Ab)); %normalizo entre el numero total de elementos
+-    Hd(i,j)=Hi;
+-    Hd(j,i)=Hi;
+-    end
++blockSize = min(256,N);
++for first = 1:blockSize:N
++    last = min(first + blockSize - 1,N);
++    shared = full(ctranspose(A) * A(:,first:last));
++    pairUnion = bsxfun(@plus,ctranspose(present),present(first:last)) - shared;
++    Hd(:,first:last) = 1 - shared ./ pairUnion;
+ end
+ 
+ % this version is not faster than the double loop
+diff --git a/AXIS/Ras_tf_idf.m b/AXIS/Ras_tf_idf.m
+index ba79591..4eb4394 100644
+--- a/AXIS/Ras_tf_idf.m
++++ b/AXIS/Ras_tf_idf.m
+@@ -17,22 +17,11 @@ function [tf_idf_Rasterbin] = Ras_tf_idf(Rasterbin)
+ % 
+ % Luis Carrillo-Reid, 2014; Shuting Han, 2017
+ 
+-[cti, fti]=size(Rasterbin);
+-tf_Rasterbin=zeros(cti,fti);
+-idf_Rasterbin=zeros(cti,fti);
+-tf_idf_Rasterbin=zeros(cti,fti);
++[~, fti]=size(Rasterbin);
++tf_Rasterbin = bsxfun(@rdivide,Rasterbin,sum(Rasterbin,1));
++cellCounts = sum(Rasterbin==1,2);
++cellIdf = 1 + log(fti ./ max(cellCounts,1));
++cellIdf(cellCounts==0) = 1 + log(fti);
++tf_idf_Rasterbin = bsxfun(@times,tf_Rasterbin,cellIdf);
+ 
+-for cti1=1:cti
+-    for fti1=1:fti
+-        tf_Rasterbin(cti1,fti1)=Rasterbin(cti1,fti1)/sum(Rasterbin(:,fti1));
+-        if (sum(Rasterbin(cti1,:)==1))>0
+-        idf_Rasterbin(cti1,fti1)=1+log(fti/(sum(Rasterbin(cti1,:)==1)));
+-        end
+-        if (sum(Rasterbin(cti1,:)==1))==0
+-        idf_Rasterbin(cti1,fti1)=1+log(fti);
+-        end
+-        tf_idf_Rasterbin(cti1,fti1)=tf_Rasterbin(cti1,fti1)*idf_Rasterbin(cti1,fti1);
+-    end
+ end
+-
+-end
+\ No newline at end of file
 diff --git a/Stoixeion.m b/Stoixeion.m
+index 34f89bc..06d9c57 100644
 --- a/Stoixeion.m
 +++ b/Stoixeion.m
-@@ -1,2 +1,2 @@
+@@ -1,4 +1,4 @@
 -function [Pools_coords] = Stoixeion(Spikes,Coord_active,FFo)
 +function [Pools_coords,Diagnostics] = Stoixeion(Spikes,Coord_active,FFo)
  % Find ensembles using SVD method.
-@@ -93,3 +93,3 @@
+ % INPUT:
+ %     Spikes: N-by-T binary spike matrix, where N is the number of neurons,
+@@ -80,9 +80,12 @@ S_indexb = double(S_index_ti>scut);
+ 
+ % It generates defined structures depending on the cost that is needed to 
+ % convert one element to another.
+-H_index = 1-Hdist(S_indexb);
+-H_indexb = 1-Hdist((H_index>hcut)*1); %LC03Feb14
+-S_indexp = (H_indexb>hcut)*1; %Second Moment (Hamilton's Similarity). Defines structures better and removes noise
++Hdist1 = Hdist(S_indexb);
++H_indexb = (1-Hdist1 > hcut)*1;
++clear Hdist1 S_indexb;
++Hdist2 = Hdist(H_indexb);
++S_indexp = (1-Hdist2 > hcut)*1; %Second Moment (Hamilton's Similarity). Defines structures better and removes noise
++clear Hdist2 H_indexb
+ 
+ % visualize similarity structures before and after binarization
+ figure(1);clf
+@@ -93,7 +96,7 @@ xlabel('frame'); ylabel('frame'); title('binarized similarity matrix')
+ 
+ %% do SVD, find states and cells
  % Find the peaks in the states and the cells in the states
 -[C_edos,sec_Pk_edos] = Edos_from_Sindex_svd(S_indexp,state_cut); %,edos_size_cut,edos_svd_cut,rep_svd);
 +[C_edos,sec_Pk_edos,singular_values,selected_ranks] = Edos_from_Sindex_svd(S_indexp,state_cut); %,edos_size_cut,edos_svd_cut,rep_svd);
  % the returned C_edos is a binary num_sig_frame-by-num_state matrix, where
-@@ -178,3 +178,15 @@
+ % 1s indicate the timing of corresponding state; sec_Pk_edos is a
+ % 1-by-num_sig_frame vector, containing numbers indicating the active state
+@@ -128,8 +131,16 @@ sec_Pk_frames = sum(C_edos_temp,2);
+ 
+ HistEdos(Spikes,Pks_Frame,sec_Pk_frames,pks); 
+ 
+-% print detected cycles
+-[Ciclos_nums,Ciclos_H_E] = CyFolds(sec_Pk_edos_Ren);
++% print detected cycles
++try
++    [Ciclos_nums,Ciclos_H_E] = CyFolds(sec_Pk_edos_Ren);
++catch cycleError
++    % Cycle reporting is auxiliary; keep ensemble detection if no cycles exist.
++    Ciclos_nums = [];
++    Ciclos_H_E = [];
++    warning('Stoixeion:CycleSummarySkipped', ...
++        'Skipping auxiliary cycle summary: %s', cycleError.message);
++end
+ 
+ % find most significant cells for each state
+ % csi_num_temp: columns indicate neuron members of each state
+@@ -176,7 +187,19 @@ xlabel('ensembles'); ylabel('cell index'); title('ensemble cells')
+ %% Find the coordinates of the cells that belong to each state and
+ % the most representative pools
  [Cells_coords,Pools_coords] = Search_edos_coords(Cells_edos,sis_query,Coord_active);
 -
 +
@@ -27,20 +197,139 @@ diff --git a/Stoixeion.m b/Stoixeion.m
 +Diagnostics.core_search = sis_query;
 +
  % plot cross-correlations within and between ensembles
-diff --git a/AGORA/Edos_from_Sindex_svd.m b/AGORA/Edos_from_Sindex_svd.m
---- a/AGORA/Edos_from_Sindex_svd.m
-+++ b/AGORA/Edos_from_Sindex_svd.m
-@@ -1 +1 @@
--function [C_edos,sec_Pk_edos] = Edos_from_Sindex_svd(S_indexp,state_cut)
-+function [C_edos,sec_Pk_edos,singular_values,selected_ranks] = Edos_from_Sindex_svd(S_indexp,state_cut)
-@@ -25,3 +25,4 @@
- % do SVD on binarized similarity matrix
- sz = size(S_indexp,2);
- [U_svd,S_svd,V_svd] = svd(S_indexp);
-+singular_values = diag(S_svd);
-@@ -85,3 +85,4 @@
+ t_lag = 200;
+ states_corr = xcorr_states(Pools_coords,Spikes,t_lag);
+@@ -231,4 +254,4 @@ if ~isempty(FFo)
+     end
  end
--
+ 
+-end
+\ No newline at end of file
++end
+diff --git a/calc_scut.m b/calc_scut.m
+index 188de97..d69d7c9 100644
+--- a/calc_scut.m
++++ b/calc_scut.m
+@@ -1,29 +1,25 @@
+ function [scut] = calc_scut(data)
+ % calculate threshold of similarity values from shuffled data
+ 
+-num_shuff = 100;
+-p = 0.88;
+-dims = size(data);
++num_shuff = 100;
++p = 0.88;
++bins = 0:0.01:1;
++histCounts = zeros(size(bins));
 +
-+selected_ranks = edos_temp2(:);
- %fac_cut=0.85;
++% Process one shuffled raster and its similarity matrix at a time.
++warning('off')
++for n = 1:num_shuff
++    data_shuff = shuffle(data,'time');
++    similarity = 1-pdist2(data_shuff',data_shuff','cosine');
++    blockCounts = reshape(histc(similarity(:),bins),size(bins));
++    histCounts = histCounts + blockCounts;
++    clear data_shuff similarity;
++    if mod(n,10)==0, fprintf('calc_scut shuffle %d/%d\n',n,num_shuff); end
++end
++warning('on')
++
++% determine threshold
++cd = cumsum(histCounts/sum(histCounts));
++scut = bins(find(cd>p,1));
+ 
+-% make shuffled data
+-data_shuff = zeros(dims(1),dims(2),num_shuff);
+-for n = 1:num_shuff
+-    data_shuff(:,:,n) = shuffle(data,'time');
+-end
+-    
+-% calculate similarity matrix
+-warning('off')
+-S = zeros(dims(2),dims(2),num_shuff);
+-for n = 1:num_shuff
+-%     S(:,:,n) = sindex(data_shuff(:,:,n));
+-    S(:,:,n) = 1-pdist2(squeeze(data_shuff(:,:,n))',squeeze(data_shuff(:,:,n))','cosine');
+-end
+-warning('on')
+-
+-% determine threshold
+-bins = 0:0.01:1;
+-cd = histc(S(:),bins);
+-cd = cumsum(cd/sum(cd));
+-scut = bins(find(cd>p,1));
+-
+-end
+\ No newline at end of file
++end
+diff --git a/findHighactFrames.m b/findHighactFrames.m
+index c98c5fb..c3d5f0c 100644
+--- a/findHighactFrames.m
++++ b/findHighactFrames.m
+@@ -14,30 +14,30 @@ function [data_high,pks_frame,pks] = findHighactFrames(data,pks)
+ % after some pk value the similarity between vectors in real data will be
+ % significantly higher than the similarity between vectors in random data
+ 
+-% some parameters
+-num_shuff = 100;
+-p = 0.98; %LCR
+-% max_th = 50;
+-% pks_vec = 1:max_th; % maximum threshold 50 spikes
+-            % make shuffled data
+-dims = size(data);
+-data_shuff = zeros(dims(1),dims(2),num_shuff);
+-for n1 = 1:num_shuff
+-    data_shuff(:,:,n1) = shuffle(data,'time');
+-end
+-% determine threshold from shuffled data
+-if isempty(pks)    
+-    for n=3:max(sum(data))
++% some parameters
++num_shuff = 100;
++p = 0.98; %LCR
++% max_th = 50;
++% pks_vec = 1:max_th; % maximum threshold 50 spikes
++% Keep only one shuffled raster in memory at a time. Resetting the RNG
++% before each threshold reuses the same 100 shuffles as the original code.
++shuffleState = rng;
++% determine threshold from shuffled data
++if isempty(pks)
++    for n=3:max(sum(data))
+         % find significant frames data
+         pks_frame = find(sum(data,1)>=n);
+         data_high = data(:,pks_frame);
+         S_index= 1-pdist2(data_high',data_high','cosine');
+ 
+-        % calculate similarity matrix shuffled
+-        warning('off')
+-        for n2 = 1:num_shuff
+-               pks_frame_rnd = find(sum(data_shuff(:,:,n2))>=n);
+-               data_high_rnd = data_shuff(:,pks_frame_rnd);
++        % calculate similarity matrix shuffled
++        warning('off')
++        rng(shuffleState);
++        for n2 = 1:num_shuff
++               data_shuff = shuffle(data,'time');
++               pks_frame_rnd = find(sum(data_shuff)>=n);
++               data_high_rnd = data_shuff(:,pks_frame_rnd);
++               clear data_shuff;
+                S_index_rnd= 1-pdist2(data_high_rnd',data_high_rnd','cosine');
+                 S_rnd=S_index_rnd(:); %To avoid NaN LCR
+                 S_nan=double(isnan(S_rnd(:)));
+@@ -63,9 +63,13 @@ if isempty(pks)
+                 pks = n
+                 break;
+             end
+-    end
+-    
+-end
++    end
++else
++    % Preserve the original random-state advancement when pks is supplied.
++    for n1 = 1:num_shuff
++        shuffle(data,'time');
++    end
++end
+         pks_frame = find(sum(data,1)>=pks);
+         data_high = data(:,pks_frame);
+ end
