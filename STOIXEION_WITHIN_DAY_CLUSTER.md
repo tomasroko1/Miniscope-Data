@@ -12,4 +12,10 @@ El selector `phasewise` incluye HabL y las jornadas SD/XsS de cuatro fases. Cada
 
 Cada carpeta de fase incluye `singular_values.png`: espectro de la SVD de la matriz de similitud, con los rangos seleccionados marcados en rojo. Los valores num?ricos tambi?n quedan en `singular_values.csv` en la carpeta ra?z de resultados.
 
+Si ya corriste el an?lisis y solo falta el gr?fico, pod?s crearlo desde el CSV sin repetir Stoixeion:
+
+```matlab
+addpath('/mnt/NAS/Tomas/Miniscope-Data'); plot_stoixeion_singular_values('/mnt/NAS/Tomas/results/stoixeion/phasewise')
+```
+
 Los `.mat` simples de HabC1/HabC2 no contienen un mapping de cuatro fases y no entran en esta corrida.
