@@ -150,6 +150,7 @@ for ai = 1:numel(animals)
                 close all force;
                 [pools, diagnostics] = Stoixeion(spikes, coords, []);
                 saveStoixeionFigures(phaseOut);
+                saveSingularSpectrum(diagnostics, phaseOut);
                 close all force;
                 nFactors = size(diagnostics.ensemble_vectors, 2);
                 newShuffleRows = plotCoreVsShuffled(spikes, pools, diagnostics, t, phaseOut, ...
@@ -367,6 +368,31 @@ for k = 1:numel(figures)
 end
 end
 
+function saveSingularSpectrum(diagnostics, folder)
+values = double(diagnostics.singular_values(:));
+if isempty(values), return; end
+ranks = (1:numel(values))';
+fig = figure('Visible', 'off', 'Color', 'w');
+semilogx(ranks, values, 'k-', 'LineWidth', 1.5);
+hold on;
+if isfield(diagnostics, 'selected_singular_ranks')
+    selected = double(diagnostics.selected_singular_ranks(:));
+    selected = unique(round(selected(isfinite(selected) & selected >= 1 & selected <= numel(values))));
+    if ~isempty(selected)
+        semilogx(selected, values(selected), 'ro', 'MarkerFaceColor', 'r', 'MarkerSize', 6);
+        legend({'Valores singulares', 'Rangos seleccionados'}, 'Location', 'northeast');
+    end
+end
+xlim([1 max(10, numel(values))]);
+ylim([0 max(1, max(values) * 1.05)]);
+xlabel('Rango singular (escala log)');
+ylabel('Valor singular');
+title('SVD de la matriz de similitud de Stoixeion');
+box on;
+saveas(fig, fullfile(folder, 'singular_values.png'));
+close(fig);
+end
+
 function result = runGlobalConcatenated(phaseS, phaseT, phaseNames, phaseColumns, ...
     commonRows, animal, dayName, sessionFile, nCellsUsed, dayOut)
 result.summaryRows = {};
@@ -419,6 +445,7 @@ if size(diagnostics.ensemble_vectors, 1) ~= numel(diagnostics.significant_frames
     error('Stoixeion devolvio vectores y marcos significativos desalineados.');
 end
 saveStoixeionFigures(globalOut, 8);
+saveSingularSpectrum(diagnostics, globalOut);
 close all force;
 
 nFactors = size(diagnostics.ensemble_vectors, 2);
