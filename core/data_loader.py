@@ -7,8 +7,7 @@ def get_data_dir():
     if configured_dir:
         return os.path.abspath(os.path.expanduser(configured_dir))
 
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_dir, 'data')
+    return '/mnt/NAS/Miniscopes/Reg_CA1/DataBase'
 
 def list_sessions(data_dir=None):
     # lista todas las sesiones disponibles devolviendo una lista de diccionarios

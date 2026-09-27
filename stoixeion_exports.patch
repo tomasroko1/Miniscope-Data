@@ -263,7 +263,7 @@ index 188de97..d69d7c9 100644
 \ No newline at end of file
 +end
 diff --git a/findHighactFrames.m b/findHighactFrames.m
-index c98c5fb..c3d5f0c 100644
+index c98c5fb..71aa9d9 100644
 --- a/findHighactFrames.m
 +++ b/findHighactFrames.m
 @@ -14,30 +14,30 @@ function [data_high,pks_frame,pks] = findHighactFrames(data,pks)
@@ -316,12 +316,15 @@ index c98c5fb..c3d5f0c 100644
                 S_index_rnd= 1-pdist2(data_high_rnd',data_high_rnd','cosine');
                  S_rnd=S_index_rnd(:); %To avoid NaN LCR
                  S_nan=double(isnan(S_rnd(:)));
-@@ -63,9 +63,13 @@ if isempty(pks)
+@@ -63,9 +63,17 @@ if isempty(pks)
                  pks = n
                  break;
              end
 -    end
 -    
+-end
+-        pks_frame = find(sum(data,1)>=pks);
+-        data_high = data(:,pks_frame);
 -end
 +    end
 +else
@@ -330,6 +333,10 @@ index c98c5fb..c3d5f0c 100644
 +        shuffle(data,'time');
 +    end
 +end
-         pks_frame = find(sum(data,1)>=pks);
-         data_high = data(:,pks_frame);
- end
++if isempty(pks)
++    error('Stoixeion:NoSignificantPks', ...
++        'No activity threshold passed the shuffle significance criterion.');
++end
++        pks_frame = find(sum(data,1)>=pks);
++        data_high = data(:,pks_frame);
++end

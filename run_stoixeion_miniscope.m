@@ -6,7 +6,7 @@ rootDir = fileparts(mfilename('fullpath'));
 if nargin < 1 || isempty(selection), selection = 'pilot'; end
 selection = char(selection);
 if nargin < 2 || isempty(dataDir), dataDir = getenv('MINISCOPE_DATA_DIR'); end
-if isempty(dataDir), dataDir = fullfile(rootDir, 'data'); end
+if isempty(dataDir), dataDir = '/mnt/NAS/Miniscopes/Reg_CA1/DataBase'; end
 if nargin < 3 || isempty(stoixeionDir), stoixeionDir = getenv('STOIXEION_DIR'); end
 if nargin < 4 || isempty(outDir)
     outDir = fullfile(rootDir, 'results', 'stoixeion', char(selection));
@@ -150,8 +150,8 @@ for ai = 1:numel(animals)
                 close all force;
                 [pools, diagnostics] = Stoixeion(spikes, coords, []);
                 saveStoixeionFigures(phaseOut);
-                saveSingularSpectrum(diagnostics, phaseOut);
                 close all force;
+                saveSingularSpectrum(diagnostics.singular_values, nPhaseCells, phaseOut);
                 nFactors = size(diagnostics.ensemble_vectors, 2);
                 newShuffleRows = plotCoreVsShuffled(spikes, pools, diagnostics, t, phaseOut, ...
                     animal, dayName, sessionFile, phaseNames{pi}, 199);
@@ -368,27 +368,38 @@ for k = 1:numel(figures)
 end
 end
 
-function saveSingularSpectrum(diagnostics, folder)
-values = double(diagnostics.singular_values(:));
-if isempty(values), return; end
-ranks = (1:numel(values))';
+function saveSingularSpectrum(singularValues, nCells, folder)
+% Plot only the singular ranks Stoixeion considers for ensemble detection.
+nRanks = min(numel(singularValues), round(nCells / 6));
+if nRanks < 1, return; end
+ranks = 1:nRanks;
+values = double(singularValues(ranks));
+positive = isfinite(values) & values > 0;
+if ~any(positive), return; end
 fig = figure('Visible', 'off', 'Color', 'w');
-semilogx(ranks, values, 'k-', 'LineWidth', 1.5);
-hold on;
-if isfield(diagnostics, 'selected_singular_ranks')
-    selected = double(diagnostics.selected_singular_ranks(:));
-    selected = unique(round(selected(isfinite(selected) & selected >= 1 & selected <= numel(values))));
-    if ~isempty(selected)
-        semilogx(selected, values(selected), 'ro', 'MarkerFaceColor', 'r', 'MarkerSize', 6);
-        legend({'Valores singulares', 'Rangos seleccionados'}, 'Location', 'northeast');
-    end
+semilogy(ranks(positive), values(positive), 'k-', 'LineWidth', 0.75);
+title('C: Singular values');
+xlabel('Singular rank');
+ylabel('Singular value');
+xlim([1 max(nRanks, 2)]);
+logValues = log10(values(positive));
+logRange = max(logValues) - min(logValues);
+margin = 0.05 * logRange;
+if margin == 0, margin = 0.05; end
+yLimits = 10 .^ [min(logValues) - margin, max(logValues) + margin];
+ylim(yLimits);
+decades = floor(log10(yLimits(1))):ceil(log10(yLimits(2)));
+yTicks = sort(reshape([1; 2; 3; 5] * 10 .^ decades, 1, []));
+yTicks = yTicks(yTicks >= yLimits(1) & yTicks <= yLimits(2));
+if numel(yTicks) > 8
+    yTicks = 10 .^ decades;
+    yTicks = yTicks(yTicks >= yLimits(1) & yTicks <= yLimits(2));
 end
-xlim([1 max(10, numel(values))]);
-ylim([0 max(1, max(values) * 1.05)]);
-xlabel('Rango singular (escala log)');
-ylabel('Valor singular');
-title('SVD de la matriz de similitud de Stoixeion');
-box on;
+if ~isempty(yTicks)
+    set(gca, 'YTick', yTicks, 'YTickLabel', ...
+        arrayfun(@(value) sprintf('%g', value), yTicks, 'UniformOutput', false));
+end
+set(gca, 'Color', 'w');
 saveas(fig, fullfile(folder, 'singular_values.png'));
 close(fig);
 end
@@ -445,8 +456,8 @@ if size(diagnostics.ensemble_vectors, 1) ~= numel(diagnostics.significant_frames
     error('Stoixeion devolvio vectores y marcos significativos desalineados.');
 end
 saveStoixeionFigures(globalOut, 8);
-saveSingularSpectrum(diagnostics, globalOut);
 close all force;
+saveSingularSpectrum(diagnostics.singular_values, nCells, globalOut);
 
 nFactors = size(diagnostics.ensemble_vectors, 2);
 coreCount = 0;

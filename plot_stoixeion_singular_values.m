@@ -1,83 +1,64 @@
-function plot_stoixeion_singular_values(resultsDir)
-% Recreate singular_values.png from an existing Stoixeion singular_values.csv.
-
-if nargin < 1 || isempty(resultsDir)
-    resultsDir = fullfile(pwd, 'results', 'stoixeion', 'phasewise');
-end
-csvPath = fullfile(resultsDir, 'singular_values.csv');
-if exist(csvPath, 'file') ~= 2
-    error('No existe %s', csvPath);
-end
-T = readtable(csvPath);
-required = {'animal','day_name','session','phase','singular_rank', ...
-    'singular_value','selected_by_stoixeion'};
-if ~all(ismember(required, T.Properties.VariableNames))
-    error('singular_values.csv no tiene las columnas esperadas.');
-end
-
-keys = cell(height(T), 1);
-for row = 1:height(T)
-    keys{row} = sprintf('%s|%s|%s|%s', textAt(T.animal, row), ...
-        textAt(T.day_name, row), textAt(T.session, row), textAt(T.phase, row));
-end
-[~, firstRows] = unique(keys, 'stable');
-for group = firstRows(:)'
-    mask = strcmp(keys, keys{group});
-    ranks = double(T.singular_rank(mask));
-    values = double(T.singular_value(mask));
-    selected = selectedFlags(T.selected_by_stoixeion(mask));
-    [ranks, order] = sort(ranks);
-    values = values(order);
-    selected = selected(order);
-    if isempty(ranks), continue; end
-
-    animal = textAt(T.animal, group);
-    dayName = textAt(T.day_name, group);
-    session = textAt(T.session, group);
-    phase = textAt(T.phase, group);
-    [~, sessionStem] = fileparts(session);
-    phaseDir = fullfile(resultsDir, animal, dayName, sessionStem, phase);
-    if exist(phaseDir, 'dir') ~= 7, mkdir(phaseDir); end
-
-    fig = figure('Visible', 'off', 'Color', 'w');
-    semilogx(ranks, values, 'k-', 'LineWidth', 1.5);
-    hold on;
-    if any(selected)
-        semilogx(ranks(selected), values(selected), 'ro', ...
-            'MarkerFaceColor', 'r', 'MarkerSize', 6);
-        legend({'Valores singulares','Rangos seleccionados'}, 'Location', 'northeast');
+function plot_stoixeion_singular_values(varargin)
+% Recreate singular_values.png from existing CSV exports, without rerunning Stoixeion.
+for rootIndex = 1:nargin
+    outDir = char(varargin{rootIndex});
+    summaryFile = fullfile(outDir, 'phase_summary.csv');
+    singularFile = fullfile(outDir, 'singular_values.csv');
+    if exist(summaryFile, 'file') ~= 2 || exist(singularFile, 'file') ~= 2
+        continue;
     end
-    xlim([1 max(10, max(ranks))]);
-    ylim([0 max(1, max(values) * 1.05)]);
-    xlabel('Rango singular (escala log)');
-    ylabel('Valor singular');
-    title(sprintf('%s | %s | SVD de similitud', animal, phase));
-    box on;
-    saveas(fig, fullfile(phaseDir, 'singular_values.png'));
-    close(fig);
-    fprintf('Figura: %s\n', fullfile(phaseDir, 'singular_values.png'));
-end
-end
+    summary = readtable(summaryFile);
+    singular = readtable(singularFile);
+    for row = 1:height(summary)
+        animal = summary.animal{row};
+        dayName = summary.day_name{row};
+        sessionFile = summary.session{row};
+        phase = summary.phase{row};
+        match = strcmp(singular.animal, animal) & ...
+            strcmp(singular.day_name, dayName) & ...
+            strcmp(singular.session, sessionFile) & ...
+            strcmp(singular.phase, phase);
+        if ~any(match), continue; end
 
-function value = textAt(column, row)
-if iscell(column)
-    value = column{row};
-elseif ischar(column)
-    value = deblank(column(row, :));
-else
-    value = char(column(row));
-end
-end
+        [ranks, order] = sort(singular.singular_rank(match));
+        values = singular.singular_value(match);
+        values = values(order);
+        nRanks = min(numel(values), round(summary.n_cells(row) / 6));
+        if nRanks < 1, continue; end
+        use = ranks >= 1 & ranks <= nRanks & isfinite(values) & values > 0;
+        if ~any(use), continue; end
 
-function flags = selectedFlags(column)
-if isnumeric(column) || islogical(column)
-    flags = column ~= 0;
-else
-    flags = false(numel(column), 1);
-    for row = 1:numel(column)
-        value = textAt(column, row);
-        flags(row) = strcmpi(value, 'true') || strcmp(value, '1');
+        [~, sessionStem] = fileparts(sessionFile);
+        phaseDir = fullfile(outDir, animal, dayName, sessionStem, phase);
+        if exist(phaseDir, 'dir') ~= 7, mkdir(phaseDir); end
+        fig = figure('Visible', 'off', 'Color', 'w');
+        semilogy(ranks(use), values(use), 'k-', 'LineWidth', 0.75);
+        title('C: Singular values');
+        xlabel('Singular rank');
+        ylabel('Singular value');
+        xlim([1 max(nRanks, 2)]);
+        logValues = log10(values(use));
+        logRange = max(logValues) - min(logValues);
+        margin = 0.05 * logRange;
+        if margin == 0, margin = 0.05; end
+        yLimits = 10 .^ [min(logValues) - margin, max(logValues) + margin];
+        ylim(yLimits);
+        decades = floor(log10(yLimits(1))):ceil(log10(yLimits(2)));
+        yTicks = sort(reshape([1; 2; 3; 5] * 10 .^ decades, 1, []));
+        yTicks = yTicks(yTicks >= yLimits(1) & yTicks <= yLimits(2));
+        if numel(yTicks) > 8
+            yTicks = 10 .^ decades;
+            yTicks = yTicks(yTicks >= yLimits(1) & yTicks <= yLimits(2));
+        end
+        if ~isempty(yTicks)
+            set(gca, 'YTick', yTicks, 'YTickLabel', ...
+                arrayfun(@(value) sprintf('%g', value), yTicks, 'UniformOutput', false));
+        end
+        set(gca, 'Color', 'w');
+        saveas(fig, fullfile(phaseDir, 'singular_values.png'));
+        close(fig);
+        fprintf('Saved %s %s %s %s: ranks 1:%d\n', ...
+            animal, dayName, sessionStem, phase, nRanks);
     end
 end
-flags = flags(:);
 end
