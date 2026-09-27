@@ -85,11 +85,18 @@ import traceback
 from collections import Counter
 from contextlib import contextmanager
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.lines import Line2D
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.lines import Line2D
+    HAS_MATPLOTLIB = True
+except ImportError:
+    plt = None
+    PdfPages = None
+    Line2D = None
+    HAS_MATPLOTLIB = False
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -1192,13 +1199,16 @@ def main():
             with timed_step(logger, "Creating common field-of-view window"):
                 window, common_window_2d = make_common_window(shiftds)
 
-            save_alignment_figure(
-                shiftds,
-                common_window_2d,
-                output_dir / ALIGNMENT_FIGURE_NAME,
-                logger,
-                session_name_map=session_name_map,
-            )
+            if HAS_MATPLOTLIB:
+                save_alignment_figure(
+                    shiftds,
+                    common_window_2d,
+                    output_dir / ALIGNMENT_FIGURE_NAME,
+                    logger,
+                    session_name_map=session_name_map,
+                )
+            else:
+                logger.warning("matplotlib is unavailable; skipping alignment figure")
 
             A_shifted, cents, mappings_meta_fill = calculate_cross_session_mapping(
                 minian_ds,
@@ -1213,7 +1223,7 @@ def main():
                 logger,
             )
 
-            if SAVE_CONTOUR_QC:
+            if SAVE_CONTOUR_QC and HAS_MATPLOTLIB:
                 with timed_step(logger, "Extracting compact matched-cell contours"):
                     contour_df = extract_matched_cell_contours(
                         A_shifted,
@@ -1232,6 +1242,8 @@ def main():
                 )
             else:
                 contour_df = pd.DataFrame()
+                if SAVE_CONTOUR_QC and not HAS_MATPLOTLIB:
+                    logger.warning("matplotlib is unavailable; skipping contour QC figure")
 
         mappings_meta_fill, cents, shiftds = restore_session_names(
             mappings_meta_fill,

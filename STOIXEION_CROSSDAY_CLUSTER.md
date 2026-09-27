@@ -10,11 +10,11 @@ Desde el entorno Python que tiene MiniAn y desde el repo:
 python3 /mnt/NAS/Tomas/Miniscope-Data/run_cross_registration_by_animal.py --animal-root /mnt/NAS/Miniscopes/Reg_CA1/GDi/R005_M5_26
 ```
 
-El script guarda una carpeta `cross_registration_...` debajo de la carpeta del animal. Si Python informa que falta `matplotlib`, activá el entorno que usás para MiniAn o instalá `matplotlib` en ese mismo entorno antes de repetir el registro. Esta etapa Python solo genera el mapping y los controles de registro.
+El script guarda una carpeta `cross_registration_...` debajo de la carpeta del animal. `matplotlib` es opcional: si no está instalado, el script registra un aviso y omite las figuras de control, pero sigue con el mapping. Esta etapa Python solo genera el mapping.
 
 ## Ensambles en MATLAB
 
-En MATLAB, corré en una sola línea con la ruta real a `mappings.csv`:
+Abrí MATLAB y pegá la siguiente llamada en la **ventana de comandos de MATLAB**, no en Bash. Usa la ruta real a `mappings.csv`:
 
 ```matlab
 run_stoixeion_crossday('/mnt/NAS/Miniscopes/Reg_CA1/DataBase','/mnt/NAS/Miniscopes/Reg_CA1/GDi/R005_M5_26/cross_registration_TIMESTAMP/mappings.csv','/mnt/NAS/Tomas/results/stoixeion/cross_day','R005','/mnt/NAS/Tomas/Stoixeion')
