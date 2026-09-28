@@ -11,6 +11,8 @@ external/Stoixeion/
 coactivation_analysis/results/
 cache/
 cache_plots/
+felix-cache/
+install.cmd
 Mapas_Generados/
 
 # local reports, references and notes
