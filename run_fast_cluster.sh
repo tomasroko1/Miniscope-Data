@@ -71,10 +71,14 @@ if [[ ${FAILED} -gt 0 ]]; then
   exit 1
 fi
 
-echo "Consolidando tablas y generando figuras de publicacion..."
-python3 "${REPO_DIR}/plot_publication_ensembles.py" \
-    --results-dir "${OUT_DIR}" \
-    --output-dir "${OUT_DIR}/figures"
+if command -v python3 &>/dev/null; then
+  echo "Consolidando tablas y generando figuras de publicacion..."
+  python3 "${REPO_DIR}/plot_publication_ensembles.py" \
+      --results-dir "${OUT_DIR}" \
+      --output-dir "${OUT_DIR}/figures" || echo "[AVISO] La generacion de graficos fallo (falta entorno python?). Las tablas estan intactas en ${OUT_DIR}/workers/"
+else
+  echo "[AVISO] python3 no encontrado en el PATH. Las tablas estan guardadas en ${OUT_DIR}/workers/"
+fi
 
 echo "=========================================================="
 echo "Corrida completada exitosamente."
