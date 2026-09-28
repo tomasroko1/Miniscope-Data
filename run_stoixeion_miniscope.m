@@ -151,6 +151,7 @@ for ai = 1:numel(animals)
                 [pools, diagnostics] = Stoixeion(spikes, coords, []);
                 saveStoixeionFigures(phaseOut);
                 close all force;
+                savePopulationActivity(spikes, diagnostics, phaseOut);
                 saveSingularSpectrum(diagnostics.singular_values, nPhaseCells, phaseOut);
                 nFactors = size(diagnostics.ensemble_vectors, 2);
                 newShuffleRows = plotCoreVsShuffled(spikes, pools, diagnostics, t, phaseOut, ...
@@ -363,9 +364,47 @@ if nargin < 2, maxFigure = 9; end
 figures = findall(groot, 'Type', 'figure');
 for k = 1:numel(figures)
     number = get(figures(k), 'Number');
-    if number < 1 || number > maxFigure, continue; end
+    if number < 1 || number > maxFigure || number == 4 || number == 5, continue; end
     saveas(figures(k), fullfile(folder, sprintf('stoixeion_%02d.png', number)));
 end
+end
+
+function savePopulationActivity(spikes, diagnostics, folder)
+% Show the same binarized population count and detected ensemble frames separately.
+nFrames = size(spikes, 2);
+nFactors = size(diagnostics.ensemble_vectors, 2);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1200 650]);
+subplot(2, 1, 1);
+plot(1:nFrames, sum(spikes, 1), 'k-', 'LineWidth', 0.5);
+xlim([1 max(nFrames, 2)]);
+title('Actividad poblacional por frame');
+ylabel('Neuronas activas');
+box off;
+subplot(2, 1, 2);
+hold on;
+for factor = 1:nFactors
+    frames = diagnostics.significant_frames(diagnostics.ensemble_vectors(:, factor) > 0);
+    if ~isempty(frames)
+        plot(frames, repmat(factor, size(frames)), 'k|', 'MarkerSize', 4);
+    end
+end
+hold off;
+xlim([1 max(nFrames, 2)]);
+ylim([0.5 max(nFactors + 0.5, 1.5)]);
+if nFactors > 0
+    set(gca, 'YTick', 1:nFactors);
+else
+    set(gca, 'YTick', []);
+    text(nFrames / 2, 1, 'Sin ensambles detectados', 'HorizontalAlignment', 'center');
+end
+title('Apariciones de ensambles');
+xlabel('Frame');
+ylabel('Ensamble');
+box off;
+saveas(fig, fullfile(folder, 'stoixeion_04.png'));
+close(fig);
+oldRaster = fullfile(folder, 'stoixeion_05.png');
+if exist(oldRaster, 'file') == 2, delete(oldRaster); end
 end
 
 function saveSingularSpectrum(singularValues, nCells, folder)
@@ -457,6 +496,7 @@ if size(diagnostics.ensemble_vectors, 1) ~= numel(diagnostics.significant_frames
 end
 saveStoixeionFigures(globalOut, 8);
 close all force;
+savePopulationActivity(spikes, diagnostics, globalOut);
 saveSingularSpectrum(diagnostics.singular_values, nCells, globalOut);
 
 nFactors = size(diagnostics.ensemble_vectors, 2);
