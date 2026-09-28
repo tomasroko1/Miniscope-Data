@@ -5,12 +5,10 @@ Plots:
   2. Global Factor Phase Activity Dynamics (event rates across phases)
   3. Consolidated 3x3 Panel: HabL vs SD VEH vs SD CNO across R004, R005, R006.
 """
-
-from __future__ import annotations
-
 import argparse
 import os
 from pathlib import Path
+from typing import Tuple, List, Dict, Optional
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -96,7 +94,7 @@ def consolidate_worker_csvs(results_dir: Path):
             print(f"  [OK] Consolidado {csv_name}: {len(merged_df)} filas -> {tables_dir / csv_name}")
 
 
-def load_data(results_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_data(results_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load core_overlap, phase_summary, and global_factor_phase_activity."""
     consolidate_worker_csvs(results_dir)
 
