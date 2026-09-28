@@ -8,7 +8,11 @@ set -euo pipefail
 REPO_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DATA_DIR=${1:-"/mnt/NAS/Miniscopes/Reg_CA1/DataBase"}
 OUT_DIR=${2:-"/mnt/NAS/Tomas/results/stoixeion_fast_clean"}
-STOIXEION_DIR=${3:-"${REPO_DIR}/external/Stoixeion"}
+DEFAULT_STOIXEION="${REPO_DIR}/external/Stoixeion"
+if [[ -f "/mnt/NAS/Tomas/Stoixeion/Stoixeion.m" ]]; then
+  DEFAULT_STOIXEION="/mnt/NAS/Tomas/Stoixeion"
+fi
+STOIXEION_DIR=${3:-"${DEFAULT_STOIXEION}"}
 MATLAB_BIN=${MATLAB_BIN:-"/usr/local/MATLAB/R2017a/bin/matlab"}
 
 mkdir -p "${OUT_DIR}"
@@ -37,18 +41,9 @@ for ANIMAL in "${ANIMALS[@]}"; do
   
   echo "  -> Lanzando worker para ${ANIMAL}..."
   
-  # Run worker in background
+  # Run worker in background (single-line -r prevents MATLAB syntax errors with newlines)
   (
-    "${MATLAB_BIN}" -nodisplay -nodesktop -nosplash -r "
-      try
-        addpath('${REPO_DIR}');
-        run_stoixeion_fast('${ANIMAL}', '${DATA_DIR}', '${STOIXEION_DIR}', '${WORKER_OUT}', false);
-        exit(0);
-      catch ME
-        disp(getReport(ME, 'extended'));
-        exit(1);
-      end;
-    " > "${LOG_FILE}" 2>&1
+    "${MATLAB_BIN}" -nodisplay -nodesktop -nosplash -r "try, cd('${REPO_DIR}'); addpath(pwd); run_stoixeion_fast('${ANIMAL}', '${DATA_DIR}', '${STOIXEION_DIR}', '${WORKER_OUT}', false); exit(0); catch ME, disp(getReport(ME, 'extended')); exit(1); end;" > "${LOG_FILE}" 2>&1
   ) &
   PIDS+=($!)
 done
@@ -71,13 +66,20 @@ if [[ ${FAILED} -gt 0 ]]; then
   exit 1
 fi
 
+PYTHON_BIN=""
 if command -v python3 &>/dev/null; then
+  PYTHON_BIN="python3"
+elif command -v python &>/dev/null; then
+  PYTHON_BIN="python"
+fi
+
+if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Consolidando tablas y generando figuras de publicacion..."
-  python3 "${REPO_DIR}/plot_publication_ensembles.py" \
+  "${PYTHON_BIN}" "${REPO_DIR}/plot_publication_ensembles.py" \
       --results-dir "${OUT_DIR}" \
       --output-dir "${OUT_DIR}/figures" || echo "[AVISO] La generacion de graficos fallo (falta entorno python?). Las tablas estan intactas en ${OUT_DIR}/workers/"
 else
-  echo "[AVISO] python3 no encontrado en el PATH. Las tablas estan guardadas en ${OUT_DIR}/workers/"
+  echo "[AVISO] Python no encontrado en el PATH. Las tablas estan guardadas en ${OUT_DIR}/workers/"
 fi
 
 echo "=========================================================="
