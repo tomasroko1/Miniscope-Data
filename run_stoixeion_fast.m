@@ -249,6 +249,10 @@ switch lower(selection)
         isHabL = strcmpi(dayName, 'HabL');
         isSD = ~isempty(strfind(lower(dayName), '_sd_')); %#ok<STREMP>
         yes = (isHabL || isSD) && ismember(animal, {'R004', 'R005', 'R006'});
+    case {'r004', 'r005', 'r006'}
+        isHabL = strcmpi(dayName, 'HabL');
+        isSD = ~isempty(strfind(lower(dayName), '_sd_')); %#ok<STREMP>
+        yes = (isHabL || isSD) && strcmpi(animal, selection);
     case 'sd'
         yes = ~isempty(strfind(lower(dayName), '_sd_')); %#ok<STREMP>
     case 'habl'

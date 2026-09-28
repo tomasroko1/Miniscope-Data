@@ -52,11 +52,65 @@ def bh_adjust(p_values: np.ndarray) -> np.ndarray:
     return adjusted
 
 
+def consolidate_worker_csvs(results_dir: Path):
+    """If worker subdirectories exist (e.g. workers/R004), consolidate their CSVs into tables/ and results_dir/."""
+    workers_dir = results_dir / "workers"
+    if not workers_dir.exists():
+        return
+
+    tables_dir = results_dir / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_names = [
+        "phase_summary.csv",
+        "core_members.csv",
+        "core_overlap.csv",
+        "ensemble_activity.csv",
+        "singular_values.csv",
+        "event_thresholds.csv",
+        "core_shuffle_summary.csv",
+        "global_factor_phase_activity.csv",
+    ]
+
+    worker_dirs = [d for d in workers_dir.iterdir() if d.is_dir()]
+    if not worker_dirs:
+        return
+
+    print(f"Consolidando CSVs de {len(worker_dirs)} workers ({[w.name for w in worker_dirs]})...")
+    for csv_name in csv_names:
+        dfs = []
+        for w in worker_dirs:
+            csv_path = w / csv_name
+            if csv_path.exists():
+                try:
+                    df = pd.read_csv(csv_path)
+                    if not df.empty:
+                        dfs.append(df)
+                except Exception as e:
+                    print(f"Aviso al leer {csv_path}: {e}")
+        if dfs:
+            merged_df = pd.concat(dfs, ignore_index=True)
+            merged_df.drop_duplicates(inplace=True)
+            merged_df.to_csv(tables_dir / csv_name, index=False)
+            merged_df.to_csv(results_dir / csv_name, index=False)
+            print(f"  [OK] Consolidado {csv_name}: {len(merged_df)} filas -> {tables_dir / csv_name}")
+
+
 def load_data(results_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load core_overlap, phase_summary, and global_factor_phase_activity."""
-    overlap_file = results_dir / "core_overlap.csv"
-    summary_file = results_dir / "phase_summary.csv"
-    global_file = results_dir / "global_factor_phase_activity.csv"
+    consolidate_worker_csvs(results_dir)
+
+    overlap_file = results_dir / "tables" / "core_overlap.csv"
+    if not overlap_file.exists():
+        overlap_file = results_dir / "core_overlap.csv"
+
+    summary_file = results_dir / "tables" / "phase_summary.csv"
+    if not summary_file.exists():
+        summary_file = results_dir / "phase_summary.csv"
+
+    global_file = results_dir / "tables" / "global_factor_phase_activity.csv"
+    if not global_file.exists():
+        global_file = results_dir / "global_factor_phase_activity.csv"
 
     df_overlap = pd.read_csv(overlap_file) if overlap_file.exists() else pd.DataFrame()
     df_summary = pd.read_csv(summary_file) if summary_file.exists() else pd.DataFrame()
