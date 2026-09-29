@@ -2,6 +2,8 @@
 
 This branch contains a small, self-contained handoff for the R005 registration follow-up and the auditable six-day S–D coactivity export. Start with [`CLUSTER_HANDOFF_2026_09_29/PROMPT_REANUDAR_CLUSTER.md`](CLUSTER_HANDOFF_2026_09_29/PROMPT_REANUDAR_CLUSTER.md).
 
+The `carrillo_poster/` subfolder adds two ready-to-use Stoixeion figures and a separate short explanation of what that method found. Its core-overlap inference comes from the 999-permutation phasewise run; the six-day pairwise-network result elsewhere in the handoff is a different analysis.
+
 To download **only this handoff** into the cluster results directory without switching the existing checkout:
 
 ```bash
