@@ -1,5 +1,7 @@
 # Seguimiento para el agente del cluster
 
+**Archivado:** este prompt precede al registro focal que ya terminó. Usar ahora [`PROMPT_AUDITORIA_ORDEN_CLUSTER.md`](PROMPT_AUDITORIA_ORDEN_CLUSTER.md). Las frases «0/18» y «reanudar el registro» abajo describen el estado anterior, no el resultado vigente.
+
 Ya hiciste el panorama inicial y creaste `results/CA1_poster_curado_2026_09_29/`. **Continuá desde ese trabajo; no repitas el inventario.** Este handoff aporta el runner de registro y el export trazable de coactividad S–D. Respondé en español. Conservá las salidas anteriores.
 
 ## Prioridad hoy: cerrar las afirmaciones del póster

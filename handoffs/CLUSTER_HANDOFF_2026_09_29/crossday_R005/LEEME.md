@@ -12,7 +12,7 @@ Encontré en Descargas el ZIP `R005-20260927T013505Z-1-001.zip`, exportado de un
 
 **Interpretación:** los dos enlaces ya presentes y consistentes por tablas son compatibles con que una parte del core de Factor 5 VEH participe en Factor 2 CNO. Son **candidatos de identidad**, todavía sin huella `A` confirmada. Las otras 46 parejas son **candidatas de posición**; no permiten afirmar identidad del ensemble ni cuantificar su conservación. Por tanto, el registro disponible no demuestra que Factor 5 desaparezca bajo CNO. La actividad tardía de TEST observada en el ajuste CNO sigue siendo una explicación alternativa importante.
 
-**Actualización del cluster, 29/9:** el pantallazo de la auditoría del agente informa **0/18 células core F5 con correspondencia interdiaria concluyente por QC de huella `A`**. Las 18 siguen sin evaluación morfológica concluyente. Los dos enlaces de tabla y seis geométricos mantienen el estatus de candidatos. El agente no pudo arrancar el registro focal por una ruta de script incorrecta y un entorno sin `xarray`; el [handoff actualizado](../../CLUSTER_HANDOFF_2026_09_29/LEEME.md) contiene el runner, manifiesto y un prompt de reanudación.
+**Actualización del cluster, 29/9 (reporte focal más reciente):** terminó un registro de las **ocho adquisiciones** VEH/CNO. Su mapping global **no es utilizable para conclusiones poblacionales**: conserva 83/136 células VEH y 97/165 CNO presentes en las cuatro fases dentro de cada día. El QC local de huellas `A` respalda **2/18** enlaces de células core del Factor 5 entre fechas; ambas aparecen en el core del Factor 2 CNO y su ensemble de TEST. Las otras 16 siguen **indeterminadas**, no ausentes. El intento anterior que falló por ruta/`xarray` queda superado. La auditoría focal y sus tablas están únicamente en el cluster, bajo `/mnt/NAS/Tomas/results/R005_SD_VEH_CNO_registration_targeted_20260929_v2/`; aquí solo dispongo del resumen mostrado por el agente, no de sus CSV para reauditarlo.
 
 ## Cómo se produjo la lista de 46 candidatas
 
@@ -27,11 +27,11 @@ La mediana de la desviación máxima de los cuatro centroides respecto del prome
 | 14 | 362 | 3 | 1,72 px |
 | 300 | 36 | 828 | 1,24 px |
 
-Ambas están en el core del Factor 5 VEH y del Factor 2 CNO según las tablas de mapping. El denominador importante es **2 de 18** células core con enlace 4/4 **tabular**, frente a **0 de 18** con identidad entre fechas concluida por huella `A` en la revisión del cluster. Las otras 16 no se pueden tratar como ausentes del día CNO. [Los nueve enlaces](existing_consistent_all4_links.csv) y [el subconjunto de dos](F5_core_existing_links.csv) están en CSV. Los `mapped_cell_id` diarios empiezan en **0**; el `global_cell_id` del nuevo mapping empieza en **1**.
+Ambas están en el core del Factor 5 VEH y del Factor 2 CNO según las tablas de mapping. El denominador importante es **2 de 18** células core con enlace 4/4 **tabular**; el reporte focal posterior también respalda **2 de 18** por huella `A`. Sin los CSV del cluster aquí no puedo afirmar independientemente que sean exactamente las mismas dos filas de esta tabla. Las otras 16 no se pueden tratar como ausentes del día CNO. [Los nueve enlaces](existing_consistent_all4_links.csv) y [el subconjunto de dos](F5_core_existing_links.csv) están en CSV. Los `mapped_cell_id` diarios empiezan en **0**; el `global_cell_id` del nuevo mapping empieza en **1**.
 
-## Registro que falta correr en el cluster
+## Registro focal: comando archivado y resultado posterior
 
-El ajuste de 22 adquisiciones no es la prueba óptima para estos dos días. El cluster tiene los `A` originales y puede registrar **solo las ocho adquisiciones** VEH/CNO, con contornos y QC. El manifiesto exacto derivado de `sess.sess_paths` está en [R005_SD_VEH_CNO.txt](R005_SD_VEH_CNO.txt). La ruta de trabajo que muestran los scripts es:
+El ajuste de 22 adquisiciones no es la prueba óptima para estos dos días. El cluster tiene los `A` originales y **ya ejecutó** el registro focal de ocho adquisiciones VEH/CNO, con contornos y QC. El manifiesto exacto derivado de `sess.sess_paths` está en [R005_SD_VEH_CNO.txt](R005_SD_VEH_CNO.txt). La ruta de trabajo que muestran los scripts es:
 
 ```text
 Repositorio: /mnt/NAS/Tomas/Miniscope-Data
@@ -39,7 +39,7 @@ MiniAn:      /mnt/NAS/Miniscopes/Reg_CA1/GDi/R005_M5_26
 MAT:         /mnt/NAS/Miniscopes/Reg_CA1/DataBase/R005
 ```
 
-Ejecutar el runner actualizado en **una carpeta nueva**, usando el manifiesto copiado al cluster:
+El siguiente comando queda archivado como instrucción de reproducción; **no hace falta repetirlo para el póster**:
 
 ```bash
 python /mnt/NAS/Tomas/Miniscope-Data/run_cross_registration_by_animal.py \
@@ -50,6 +50,6 @@ python /mnt/NAS/Tomas/Miniscope-Data/run_cross_registration_by_animal.py \
   --require-qc-figures
 ```
 
-Antes de interpretar el nuevo mapping: comprobar que los 136 y 165 IDs diarios 4/4 se conservan como grupo en sus respectivas cuatro adquisiciones, inspeccionar contornos de las células core enlazadas, distancias y conflictos, y comparar sus pares con los nueve enlaces existentes y las 46 candidatas. El runner produce tablas de comparación intradía y figuras; **no usar** un `mappings.csv` que vuelva a partir la mayoría de las células ya vinculadas por `act.mapping`.
+El control posterior encontró que solo 83/136 y 97/165 IDs diarios 4/4 se conservaron en el mapping global. **No usar** ese `mappings.csv` para comparar poblaciones o factores entre días. El QC focal de las 18 células core es una pregunta separada y solo respalda dos enlaces individuales.
 
 La fuente exacta y hashes SHA-256 están en [source_sha256.json](source_sha256.json). Esta PC dispone de los `.mat` y del ZIP exportado, pero no tiene `/mnt/NAS` montado ni SSH configurado; por eso aquí no es posible repetir la etapa de registro de huellas `A`.
