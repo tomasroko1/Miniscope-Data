@@ -1,0 +1,3 @@
+animal,treatment,day_name,factor,n_core,n_members,member_fraction_of_mapped_cells,assigned_frames_total,assigned_fraction_of_recording,dominant_phase_by_count,dominant_phase_share_of_assignments,n_phases_with_assignments,descriptive_review_flags
+R006,VEH,T1_SD_VEH,1,19,62,0.9538461538461539,2644,0.05085104336955477,TEST,0.39069591527987896,4,miembros_mas_80pct_celulas
+R006,VEH,T1_SD_VEH,2,19,60,0.9230769230769231,2648,0.05092797384363881,SAMPLE,0.45959214501510576,4,miembros_mas_80pct_celulas

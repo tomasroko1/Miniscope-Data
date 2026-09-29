@@ -1,0 +1,134 @@
+[
+  {
+    "animal": "R004",
+    "treatment": "VEH",
+    "day_name": "T2_SD_VEH_",
+    "session": "2026_06_21_merged.mat",
+    "n_cells_4of4": 99,
+    "phase_frames": {
+      "OF1": 12999,
+      "SAMPLE": 12999,
+      "TEST": 12998,
+      "OF2": 12998
+    },
+    "n_global_factors": 6,
+    "n_significant_vectors_reconstructed": 18628,
+    "n_significant_vectors_exported": 18628,
+    "n_assigned_frames": 3297,
+    "max_abs_threshold_difference": NaN,
+    "pks": 3,
+    "scut": 0.15,
+    "mat_sha256": "812e3891183060b10a8d4f72a361fd84444da1714035b56b9acc3206c5e1f661",
+    "relative_day_dir": "days/R004_VEH_2026_06_21"
+  },
+  {
+    "animal": "R004",
+    "treatment": "CNO",
+    "day_name": "T1_SD_CNO",
+    "session": "2026_06_19_merged.mat",
+    "n_cells_4of4": 169,
+    "phase_frames": {
+      "OF1": 12999,
+      "SAMPLE": 12999,
+      "TEST": 12998,
+      "OF2": 12999
+    },
+    "n_global_factors": 6,
+    "n_significant_vectors_reconstructed": 32877,
+    "n_significant_vectors_exported": 32877,
+    "n_assigned_frames": 2113,
+    "max_abs_threshold_difference": 2.2490666440333484e-08,
+    "pks": 3,
+    "scut": 0.09,
+    "mat_sha256": "224e1d55662b27981fa18174bb8c64da7d5bf08be20ce1aca76a49c52549a979",
+    "relative_day_dir": "days/R004_CNO_2026_06_19"
+  },
+  {
+    "animal": "R005",
+    "treatment": "VEH",
+    "day_name": "T1_SD_VEH",
+    "session": "2026_06_19_merged.mat",
+    "n_cells_4of4": 136,
+    "phase_frames": {
+      "OF1": 12999,
+      "SAMPLE": 12999,
+      "TEST": 12998,
+      "OF2": 12999
+    },
+    "n_global_factors": 5,
+    "n_significant_vectors_reconstructed": 13009,
+    "n_significant_vectors_exported": 13009,
+    "n_assigned_frames": 4497,
+    "max_abs_threshold_difference": 4.492424277025009e-08,
+    "pks": 3,
+    "scut": 0.12,
+    "mat_sha256": "f2399ba1f6c515325bed86a0ce3357391d71267f11821d1b08e8d42d52974474",
+    "relative_day_dir": "days/R005_VEH_2026_06_19"
+  },
+  {
+    "animal": "R005",
+    "treatment": "CNO",
+    "day_name": "T2_SD_CNO",
+    "session": "2026_06_21_merged.mat",
+    "n_cells_4of4": 165,
+    "phase_frames": {
+      "OF1": 12999,
+      "SAMPLE": 12999,
+      "TEST": 12999,
+      "OF2": 12999
+    },
+    "n_global_factors": 4,
+    "n_significant_vectors_reconstructed": 16589,
+    "n_significant_vectors_exported": 16589,
+    "n_assigned_frames": 4967,
+    "max_abs_threshold_difference": 4.652524099313382e-08,
+    "pks": 3,
+    "scut": 0.08,
+    "mat_sha256": "a365ddb01b274e3279ed54aedb7252b03fb8d260959c28fac5b8061ad567dce7",
+    "relative_day_dir": "days/R005_CNO_2026_06_21"
+  },
+  {
+    "animal": "R006",
+    "treatment": "VEH",
+    "day_name": "T1_SD_VEH",
+    "session": "2026_06_20_merged.mat",
+    "n_cells_4of4": 65,
+    "phase_frames": {
+      "OF1": 12999,
+      "SAMPLE": 12999,
+      "TEST": 12999,
+      "OF2": 12998
+    },
+    "n_global_factors": 2,
+    "n_significant_vectors_reconstructed": 8665,
+    "n_significant_vectors_exported": 8665,
+    "n_assigned_frames": 5292,
+    "max_abs_threshold_difference": 5.8832233751360263e-08,
+    "pks": 3,
+    "scut": 0.22,
+    "mat_sha256": "325098316d96b150d0472d5994741d59cf24ad158c94ecbe27d59a88d1ec44ad",
+    "relative_day_dir": "days/R006_VEH_2026_06_20"
+  },
+  {
+    "animal": "R006",
+    "treatment": "CNO",
+    "day_name": "T2_SD_CNO",
+    "session": "2026_06_22_merged.mat",
+    "n_cells_4of4": 83,
+    "phase_frames": {
+      "OF1": 12999,
+      "SAMPLE": 12999,
+      "TEST": 12999,
+      "OF2": 12999
+    },
+    "n_global_factors": 2,
+    "n_significant_vectors_reconstructed": 11928,
+    "n_significant_vectors_exported": 11928,
+    "n_assigned_frames": 8037,
+    "max_abs_threshold_difference": 5.224116872426521e-08,
+    "pks": 3,
+    "scut": 0.18,
+    "mat_sha256": "93744b6678d0924d95cd979c1e87d9fe38395bfdc0fbcaf7370688b4dff8705c",
+    "relative_day_dir": "days/R006_CNO_2026_06_22"
+  }
+]

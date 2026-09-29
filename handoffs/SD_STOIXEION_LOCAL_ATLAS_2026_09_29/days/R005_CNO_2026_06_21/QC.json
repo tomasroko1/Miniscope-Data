@@ -1,0 +1,22 @@
+{
+  "animal": "R005",
+  "treatment": "CNO",
+  "day_name": "T2_SD_CNO",
+  "session": "2026_06_21_merged.mat",
+  "n_cells_4of4": 165,
+  "phase_frames": {
+    "OF1": 12999,
+    "SAMPLE": 12999,
+    "TEST": 12999,
+    "OF2": 12999
+  },
+  "n_global_factors": 4,
+  "n_significant_vectors_reconstructed": 16589,
+  "n_significant_vectors_exported": 16589,
+  "n_assigned_frames": 4967,
+  "max_abs_threshold_difference": 4.652524099313382e-08,
+  "pks": 3,
+  "scut": 0.08,
+  "mat_sha256": "a365ddb01b274e3279ed54aedb7252b03fb8d260959c28fac5b8061ad567dce7",
+  "relative_day_dir": "days/R005_CNO_2026_06_21"
+}

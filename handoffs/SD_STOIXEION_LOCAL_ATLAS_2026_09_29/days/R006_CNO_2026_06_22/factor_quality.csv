@@ -1,0 +1,3 @@
+animal,treatment,day_name,factor,n_core,n_members,member_fraction_of_mapped_cells,assigned_frames_total,assigned_fraction_of_recording,dominant_phase_by_count,dominant_phase_share_of_assignments,n_phases_with_assignments,descriptive_review_flags
+R006,CNO,T2_SD_CNO,1,29,77,0.927710843373494,4142,0.07965997384414186,SAMPLE,0.549251569290198,4,miembros_mas_80pct_celulas
+R006,CNO,T2_SD_CNO,2,30,78,0.9397590361445783,3895,0.0749096084314178,TEST,0.540436456996149,4,miembros_mas_80pct_celulas

@@ -1,0 +1,22 @@
+{
+  "animal": "R005",
+  "treatment": "VEH",
+  "day_name": "T1_SD_VEH",
+  "session": "2026_06_19_merged.mat",
+  "n_cells_4of4": 136,
+  "phase_frames": {
+    "OF1": 12999,
+    "SAMPLE": 12999,
+    "TEST": 12998,
+    "OF2": 12999
+  },
+  "n_global_factors": 5,
+  "n_significant_vectors_reconstructed": 13009,
+  "n_significant_vectors_exported": 13009,
+  "n_assigned_frames": 4497,
+  "max_abs_threshold_difference": 4.492424277025009e-08,
+  "pks": 3,
+  "scut": 0.12,
+  "mat_sha256": "f2399ba1f6c515325bed86a0ce3357391d71267f11821d1b08e8d42d52974474",
+  "relative_day_dir": "days/R005_VEH_2026_06_19"
+}

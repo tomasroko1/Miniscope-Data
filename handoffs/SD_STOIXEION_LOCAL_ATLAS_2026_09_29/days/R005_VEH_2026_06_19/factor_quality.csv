@@ -1,0 +1,6 @@
+animal,treatment,day_name,factor,n_core,n_members,member_fraction_of_mapped_cells,assigned_frames_total,assigned_fraction_of_recording,dominant_phase_by_count,dominant_phase_share_of_assignments,n_phases_with_assignments,descriptive_review_flags
+R005,VEH,T1_SD_VEH,1,22,132,0.9705882352941176,1610,0.030964515818828732,SAMPLE,0.5515527950310559,4,miembros_mas_80pct_celulas
+R005,VEH,T1_SD_VEH,2,5,120,0.8823529411764706,390,0.007500721223194538,SAMPLE,0.30512820512820515,4,miembros_mas_80pct_celulas;asignaciones_menos_1pct_frames
+R005,VEH,T1_SD_VEH,3,4,115,0.8455882352941176,338,0.006500625060101933,OF1,0.4437869822485207,4,miembros_mas_80pct_celulas;asignaciones_menos_1pct_frames
+R005,VEH,T1_SD_VEH,4,18,125,0.9191176470588235,1196,0.023002211751129917,OF2,0.4105351170568562,4,miembros_mas_80pct_celulas
+R005,VEH,T1_SD_VEH,5,18,113,0.8308823529411765,963,0.018521011635734205,TEST,0.995846313603323,3,miembros_mas_80pct_celulas
