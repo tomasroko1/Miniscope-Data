@@ -9,7 +9,8 @@ if nargin < 2 || isempty(dataDir), dataDir = getenv('MINISCOPE_DATA_DIR'); end
 if isempty(dataDir), dataDir = '/mnt/NAS/Miniscopes/Reg_CA1/DataBase'; end
 if nargin < 3 || isempty(stoixeionDir), stoixeionDir = getenv('STOIXEION_DIR'); end
 if nargin < 4 || isempty(outDir)
-    outDir = fullfile(rootDir, 'results', 'stoixeion', char(selection));
+    outDir = fullfile(fileparts(rootDir), 'results', 'stoixeion', 'runs', ...
+        [datestr(now, 'yyyy-mm-dd_HHMMSS') '_' char(selection)]);
 end
 
 if isempty(stoixeionDir) || exist(fullfile(stoixeionDir, 'Stoixeion.m'), 'file') ~= 2

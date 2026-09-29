@@ -7,7 +7,8 @@ set -euo pipefail
 
 REPO_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DATA_DIR=${1:-"/mnt/NAS/Miniscopes/Reg_CA1/DataBase"}
-OUT_DIR=${2:-"/mnt/NAS/Tomas/results/stoixeion_fast_clean"}
+RESULTS_ROOT="/mnt/NAS/Tomas/results/stoixeion"
+OUT_DIR=${2:-"${RESULTS_ROOT}/runs/$(date +%Y-%m-%d_%H%M%S)_fast_9_focal_sessions"}
 DEFAULT_STOIXEION="${REPO_DIR}/external/Stoixeion"
 if [[ -f "/mnt/NAS/Tomas/Stoixeion/Stoixeion.m" ]]; then
   DEFAULT_STOIXEION="/mnt/NAS/Tomas/Stoixeion"
@@ -15,6 +16,10 @@ fi
 STOIXEION_DIR=${3:-"${DEFAULT_STOIXEION}"}
 MATLAB_BIN=${MATLAB_BIN:-"/usr/local/MATLAB/R2017a/bin/matlab"}
 
+if [[ -e "${OUT_DIR}" ]]; then
+  echo "El directorio de salida ya existe: ${OUT_DIR}" >&2
+  exit 2
+fi
 mkdir -p "${OUT_DIR}"
 echo "=========================================================="
 echo "Iniciando corrida rapida de Stoixeion (99 shuffles, sin PNGs)"
@@ -66,20 +71,24 @@ if [[ ${FAILED} -gt 0 ]]; then
   exit 1
 fi
 
-PYTHON_BIN=""
-if command -v python3 &>/dev/null; then
-  PYTHON_BIN="python3"
-elif command -v python &>/dev/null; then
-  PYTHON_BIN="python"
+PYTHON_BIN=${PYTHON_BIN:-}
+if [[ -z "${PYTHON_BIN}" ]]; then
+  for CANDIDATE in /mnt/NAS/Tomas/results/minian_registration_env_20260929/bin/python python3 python; do
+    if command -v "${CANDIDATE}" >/dev/null 2>&1 && \
+       "${CANDIDATE}" -c 'import matplotlib, pandas' >/dev/null 2>&1; then
+      PYTHON_BIN=${CANDIDATE}
+      break
+    fi
+  done
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Consolidando tablas y generando figuras de publicacion..."
   "${PYTHON_BIN}" "${REPO_DIR}/plot_publication_ensembles.py" \
       --results-dir "${OUT_DIR}" \
-      --output-dir "${OUT_DIR}/figures" || echo "[AVISO] La generacion de graficos fallo (falta entorno python?). Las tablas estan intactas en ${OUT_DIR}/workers/"
+      --output-dir "${OUT_DIR}/figures" || echo "[AVISO] La generacion de graficos fallo. Las tablas estan intactas en ${OUT_DIR}/workers/"
 else
-  echo "[AVISO] Python no encontrado en el PATH. Las tablas estan guardadas en ${OUT_DIR}/workers/"
+  echo "[AVISO] No se encontro Python con pandas y matplotlib. Las tablas estan guardadas en ${OUT_DIR}/workers/"
 fi
 
 echo "=========================================================="
@@ -87,3 +96,6 @@ echo "Corrida completada exitosamente."
 echo "Tablas consolidadas: ${OUT_DIR}/tables/"
 echo "Figuras limpias:     ${OUT_DIR}/figures/"
 echo "=========================================================="
+if [[ "${OUT_DIR}" == "${RESULTS_ROOT}/runs/"* ]]; then
+  ln -sfn "${OUT_DIR}" "${RESULTS_ROOT}/current"
+fi

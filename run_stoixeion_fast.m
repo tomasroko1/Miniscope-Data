@@ -12,7 +12,8 @@ if isempty(dataDir), dataDir = fullfile(rootDir, 'data'); end
 if nargin < 3 || isempty(stoixeionDir), stoixeionDir = getenv('STOIXEION_DIR'); end
 if isempty(stoixeionDir), stoixeionDir = fullfile(rootDir, 'external', 'Stoixeion'); end
 if nargin < 4 || isempty(outDir)
-    outDir = fullfile(rootDir, 'results', 'stoixeion', ['fast_' char(selection)]);
+    outDir = fullfile(fileparts(rootDir), 'results', 'stoixeion', 'runs', ...
+        [datestr(now, 'yyyy-mm-dd_HHMMSS') '_fast_' char(selection)]);
 end
 if nargin < 5 || isempty(exportFigures), exportFigures = false; end
 

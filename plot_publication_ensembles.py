@@ -295,9 +295,9 @@ def plot_consolidated_grid(df_overlap: pd.DataFrame, output_path: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate publication figures from Stoixeion results.")
-    parser.add_argument("--results-dir", type=Path, default=Path("results/stoixeion/phasewise"),
+    parser.add_argument("--results-dir", type=Path, default=Path("results/stoixeion/current"),
                         help="Path to folder containing CSV exports.")
-    parser.add_argument("--output-dir", type=Path, default=Path("results/stoixeion/publication_figures"),
+    parser.add_argument("--output-dir", type=Path, default=Path("results/stoixeion/current/figures"),
                         help="Path to save generated PNG figures.")
     args = parser.parse_args()
 
