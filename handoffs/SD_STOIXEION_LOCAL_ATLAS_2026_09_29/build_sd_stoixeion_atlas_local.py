@@ -431,7 +431,7 @@ def write_index(out: Path, qcs: list[dict]) -> None:
     a{color:#075c83}.card{background:white;border:1px solid #d7e1e5;border-radius:14px;padding:1.25rem;margin:1.6rem 0;box-shadow:0 2px 8px #17313e10}
     .card img{width:100%;height:360px;object-fit:cover;object-position:top left;border:1px solid #e3e9ec}
     .card nav a{padding:.35rem .65rem;background:#eaf4f7;border-radius:7px;text-decoration:none}
-    </style><header><h1>Stoixeion · seis jornadas S–D</h1><p>Tres animales, un día VEH y uno CNO por animal. Cada factor se ajustó una vez sobre las cuatro fases del día. Las líneas de tiempo usan los frames asignados por el ajuste MATLAB exportado, verificados aquí contra los MAT y mappings locales. Las curvas y figuras se calcularon localmente. Los factores <strong>no</strong> tienen identidad entre fechas.</p><p><a href="RESUMEN_CORTO.md">Resumen de los seis días</a> · <a href="LEEME.md">Método y límites</a> · <a href="QC_ALL_DAYS.json">QC</a></p></header>''' + "\n".join(cards) + "</html>"
+    </style><header><h1>Stoixeion · seis jornadas S–D</h1><p>Tres animales, un día VEH y uno CNO por animal. Cada factor se ajustó una vez sobre las cuatro fases del día. Las líneas de tiempo usan los frames asignados por el ajuste MATLAB exportado, verificados aquí contra los MAT y mappings locales. Las curvas y figuras se calcularon localmente. Los factores <strong>no</strong> tienen identidad entre fechas.</p><p><a href="comparacion_seis_jornadas.png">Comparación de los seis días</a> · <a href="RESUMEN_CORTO.md">Resumen</a> · <a href="LEEME.md">Método y límites</a> · <a href="QC_ALL_DAYS.json">QC</a></p></header>''' + "\n".join(cards) + "</html>"
     (out / "index.html").write_text(text, encoding="utf-8")
 
 
@@ -455,6 +455,51 @@ def write_short_summary(out: Path, qcs: list[dict]) -> None:
     (out / "RESUMEN_CORTO.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def plot_six_day_overview(out: Path, qcs: list[dict]) -> None:
+    lookup = {(q["animal"], q["treatment"]): q for q in qcs}
+    fig, axes = plt.subplots(3, 2, figsize=(19, 13), layout="constrained")
+    for row_index, animal in enumerate(("R004", "R005", "R006")):
+        panels = []
+        samples = []
+        for treatment in ("VEH", "CNO"):
+            q = lookup[(animal, treatment)]
+            base = out / q["relative_day_dir"]
+            curve = pd.read_csv(base / "curves_10s.csv")
+            quality = pd.read_csv(base / "factor_quality.csv").set_index("factor")
+            n_factors = int(q["n_global_factors"])
+            data_parts = []
+            lengths = []
+            for phase in PHASES:
+                part = curve[curve.phase == phase]
+                bins = sorted(part.bin_start_s.unique())
+                block = np.zeros((n_factors, len(bins)), dtype=float)
+                for f in range(1, n_factors + 1):
+                    vals = part[part.factor == f].sort_values("bin_start_s").pct_all_frames.to_numpy(dtype=float)
+                    if len(vals) != len(bins):
+                        raise ValueError(f"Incomplete overview bins: {animal} {treatment} {phase} factor {f}")
+                    block[f - 1] = vals
+                data_parts.append(block)
+                lengths.append(len(bins))
+            panels.append((treatment, np.concatenate(data_parts, axis=1), lengths, quality, q))
+            samples.append(panels[-1][1])
+        all_values = np.concatenate([x.ravel() for x in samples])
+        vmax = max(1.0, float(np.quantile(all_values, 0.995)))
+        for col_index, (treatment, matrix, lengths, quality, q) in enumerate(panels):
+            ax = axes[row_index, col_index]
+            im = ax.imshow(matrix, cmap="magma", vmin=0, vmax=vmax, aspect="auto", interpolation="nearest")
+            borders = np.cumsum([0] + lengths)
+            centers = (borders[:-1] + borders[1:]) / 2
+            ax.set_xticks(centers, PHASES, fontsize=10)
+            ax.set_yticks(range(len(matrix)), [f"F{f} · core {int(quality.loc[f, 'n_core'])}" for f in range(1, len(matrix) + 1)], fontsize=9)
+            for boundary in borders[1:-1]:
+                ax.axvline(boundary - 0.5, color="white", lw=1, alpha=0.8)
+            ax.set_title(f"{animal} · {treatment} · {q['session'][:10].replace('_', '/')} · {len(matrix)} factores", fontsize=13, fontweight="bold")
+        fig.colorbar(im, ax=list(axes[row_index]), shrink=0.82, pad=0.01, label=f"{animal}: % de frames / 10 s (color hasta p99,5)")
+    fig.suptitle("Actividad de todos los factores Stoixeion · 3 animales × VEH/CNO · tarea S–D", fontsize=19, fontweight="bold")
+    fig.savefig(out / "comparacion_seis_jornadas.png", dpi=175, facecolor="white")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -476,9 +521,10 @@ def main() -> None:
     (out / "QC_ALL_DAYS.json").write_text(json.dumps(qcs, indent=2, ensure_ascii=False), encoding="utf-8")
     write_index(out, qcs)
     write_short_summary(out, qcs)
+    plot_six_day_overview(out, qcs)
     readme = """# Atlas Stoixeion S–D reconstruido localmente
 
-Abrí `index.html`. Hay seis días (R004/R005/R006 × VEH/CNO), una figura alta con **todos** los factores globales por día, un panel tipo Carrillo-Reid, las listas de células miembro y core, los frames asignados y la matriz binaria de coseno muestreada. `factor_quality.csv` añade banderas **descriptivas** para cores de menos de tres células, membresía mayor al 80 % de las células mapeadas y asignaciones en menos del 1 % de los frames; no descarta factores ni constituye una prueba estadística.
+Abrí `index.html`. La lámina `comparacion_seis_jornadas.png` pone VEH y CNO lado a lado para cada animal, con una escala de color compartida **dentro de ese animal**. Además hay una figura alta con **todos** los factores globales de cada día, un panel tipo Carrillo-Reid, las listas de células miembro y core, los frames asignados y la matriz binaria de coseno muestreada. `factor_quality.csv` añade banderas **descriptivas** para cores de menos de tres células, membresía mayor al 80 % de las células mapeadas y asignaciones en menos del 1 % de los frames; no descarta factores ni constituye una prueba estadística.
 
 ## Procedencia y cálculo
 

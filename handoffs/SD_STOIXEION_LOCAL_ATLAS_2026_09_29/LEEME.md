@@ -1,6 +1,6 @@
 # Atlas Stoixeion S–D reconstruido localmente
 
-Abrí `index.html`. Hay seis días (R004/R005/R006 × VEH/CNO), una figura alta con **todos** los factores globales por día, un panel tipo Carrillo-Reid, las listas de células miembro y core, los frames asignados y la matriz binaria de coseno muestreada. `factor_quality.csv` añade banderas **descriptivas** para cores de menos de tres células, membresía mayor al 80 % de las células mapeadas y asignaciones en menos del 1 % de los frames; no descarta factores ni constituye una prueba estadística.
+Abrí `index.html`. La lámina `comparacion_seis_jornadas.png` pone VEH y CNO lado a lado para cada animal, con una escala de color compartida **dentro de ese animal**. Además hay una figura alta con **todos** los factores globales de cada día, un panel tipo Carrillo-Reid, las listas de células miembro y core, los frames asignados y la matriz binaria de coseno muestreada. `factor_quality.csv` añade banderas **descriptivas** para cores de menos de tres células, membresía mayor al 80 % de las células mapeadas y asignaciones en menos del 1 % de los frames; no descarta factores ni constituye una prueba estadística.
 
 ## Procedencia y cálculo
 
