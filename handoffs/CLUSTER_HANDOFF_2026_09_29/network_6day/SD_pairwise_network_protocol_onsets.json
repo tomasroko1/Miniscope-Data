@@ -1,0 +1,26 @@
+{
+  "method": "Pearson correlation of neuron-neuron edge matrices from within-phase binned event-frame fractions",
+  "primary_bin_width_s": 1.0,
+  "sensitivity_bin_width_s": [
+    0.5,
+    2.0
+  ],
+  "event_threshold": "S > 3*within-cell/phase SD(S)",
+  "event_mode": "onsets",
+  "event_unit": "first frame of each threshold-positive run",
+  "population_mode_sensitivity": "regress each cell on the mean of all other cells within the same half-phase before pairwise correlations",
+  "cell_registration": "mapping common to four phases within each day only",
+  "cell_qc": "nonconstant and at least five active bins in every phase half",
+  "within_phase_split": "two time halves, independently estimated edge matrices",
+  "cross_phase_similarity": "Pearson across upper-triangle edges, average of half1-to-half2 and half2-to-half1",
+  "day_contrast": "SAMPLE-to-TEST network similarity minus OF1-to-OF2 network similarity",
+  "treatment_contrast": "paired CNO minus VEH within animal, no between-date cell tracking",
+  "identity_null": "199 random neuron-label permutations in TEST for SAMPLE-to-TEST matching; one-sided p unadjusted",
+  "time_shift_null": "for primary 1 s binned population-mode-removed test only, 199 independent circular TEST shifts per cell/half by at least 30 s",
+  "multiple_testing": "Holm adjustment separately across the six primary SD days for each of the identity and time-shift null families",
+  "cell_subsamples": 200,
+  "seed": 6122026,
+  "random_streams": "independent SeedSequence streams for cell subsets, identity null, and time-shift null; cell subsets shared across global-mode sensitivity",
+  "inference_unit": "animal (n=3); cell-subset percentiles are not biological confidence intervals",
+  "no_position_or_object_behavior": true
+}
