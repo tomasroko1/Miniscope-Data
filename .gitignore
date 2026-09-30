@@ -1,4 +1,5 @@
 # python cache
+.venv/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -21,6 +22,7 @@ papers/
 notas.txt
 
 # local documentation
+*.md
 /README.md
 /FORMATO_DATOS_MINISCOPE.md
 /EXPLICACION_MAPPING_Y_ESTABILIDAD_HABL.md
