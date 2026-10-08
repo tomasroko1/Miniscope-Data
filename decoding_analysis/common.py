@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from scipy.ndimage import gaussian_filter1d
 from core.data_loader import get_common_neurons, mapping_columns
-from core.place_fields import threshold_event_frames
 
 
 def category(day):
@@ -24,7 +23,9 @@ def phase_names(day, n):
     return ['Sub %d' % (i + 1) for i in range(n)]
 
 
-def session_phases(data, common=False):
+def session_phases(data, common=False, arena_tolerance_cm=2):
+    if not np.isfinite(arena_tolerance_cm) or arena_tolerance_cm < 0:
+        raise ValueError("arena_tolerance_cm debe ser finita y >= 0")
     subs = [data] if data['type'] == 'simple' else data['subsessions']
     day = str(getattr(data.get('sess'), 'day_name', ''))
     mapping = data.get('mapping')
@@ -62,25 +63,50 @@ def session_phases(data, common=False):
         if len(t) < 2 or np.any(~np.isfinite(t)) or np.any(np.diff(t) <= 0):
             raise ValueError('timestamps inválidos/no crecientes')
         dt = np.r_[np.diff(t), np.median(np.diff(t))]
+        gap = dt > max(.1, 3*np.median(dt))
+        dt[gap] = np.median(np.diff(t))
+        radius = np.hypot(x, y)
+        projected = (radius > 25) & (radius <= 25 + arena_tolerance_cm)
+        outside = np.isfinite(radius) & (radius > 25 + arena_tolerance_cm)
+        x = x.copy(); y = y.copy()
+        scale = (25 - 1e-8)/radius[projected]
+        x[projected] *= scale; y[projected] *= scale
+        if outside.mean() > .05:
+            print('[¡¡¡ ARENA !!!] %s: %.1f%% de frames fuera; revisar centro (0,0) y unidades cm.' %
+                  (name, 100*outside.mean()), flush=True)
         speed = sub.get('v')
         if speed is None:
-            speed = np.hypot(np.gradient(x, t), np.gradient(y, t))
+            finite = np.isfinite(x) & np.isfinite(y)
+            filled = [np.interp(t, t[finite], pos[finite]) if finite.any() else
+                      np.full(len(t), np.nan) for pos in [x, y]]
+            speed = np.hypot(np.gradient(filled[0], t), np.gradient(filled[1], t))
             speed = gaussian_filter1d(speed, max(1, .25 / np.median(dt)))
         else:
             speed = np.asarray(speed, dtype=float).ravel()
         valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(speed) & np.isfinite(S).all(axis=1)
-        valid &= x*x + y*y <= 25**2 + 1e-6
+        valid &= ~outside & ~gap
         result.append(dict(phase=name, x=x, y=y, t=t, dt=dt, speed=speed,
-                           S=S, valid=valid, ids=gids, columns=columns, aligned=aligned))
+                           S=S, valid=valid, ids=gids, columns=columns, aligned=aligned,
+                           frac_frames_projected=float(projected.mean()),
+                           frac_frames_outside_arena=float(outside.mean())))
     return day, result
 
 
 def activity(S, mode='events', threshold_sd=3, source=None):
     if mode == 'S':
         return np.maximum(S, 0)
-    src = S if source is None else source
-    return np.column_stack([threshold_event_frames(S[:, i], threshold_source=src[:, i],
-                             threshold_sd=threshold_sd)[0] for i in range(S.shape[1])])
+    S = np.asarray(S, dtype=float)
+    src = S if source is None else np.asarray(source, dtype=float)
+    finite = np.isfinite(src)
+    count = finite.sum(axis=0)
+    if np.any(count < 2):
+        raise ValueError('insuficientes datos')
+    if finite.all():
+        sd = np.std(src, axis=0, ddof=1)
+    else:
+        sd = np.std(src, axis=0, ddof=1, where=finite)
+    threshold = threshold_sd*sd
+    return (np.isfinite(S) & (S > threshold)).astype(float)
 
 
 def shift_choices(n, dt, rng, count):

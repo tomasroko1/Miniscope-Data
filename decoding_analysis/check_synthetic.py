@@ -29,6 +29,12 @@ def check(data_dir, results_dir, min_recall=.7, max_fpr=.2):
     recall = planted.is_object_cell.mean(); fpr = others.is_object_cell.mean()
     print('Recall SAMPLE: %.3f (%d/%d); falsos positivos: %.3f (%d/%d)' %
           (recall,planted.is_object_cell.sum(),len(planted),fpr,others.is_object_cell.sum(),len(others)))
+    strict_recall = planted.is_object_cell_strict.mean()
+    strict_fpr = others.is_object_cell_strict.mean()
+    print('Recall estricto SAMPLE: %.3f (%d/%d); falsos positivos estrictos: %.3f (%d/%d)' %
+          (strict_recall, planted.is_object_cell_strict.sum(), len(planted),
+           strict_fpr, others.is_object_cell_strict.sum(), len(others)))
+    assert strict_fpr <= .10, 'falsos positivos estrictos excesivos'
     assert recall >= min_recall, 'recall insuficiente'
     assert fpr <= max_fpr, 'falsos positivos excesivos'
     aligned = planted[planted.is_object_cell].merge(disp, on=['animal','session_file','global_id'], suffixes=('_sample','_disp'))

@@ -54,7 +54,8 @@ def analyse_phase(phase, coords, opts, rng):
     rows = []
     for i, gid in enumerate(phase['ids']):
         preferred = coords.object_id.iloc[int(np.nanargmax(per[:, i]))] if np.isfinite(per[:, i]).any() else ''
-        row = dict(phase=phase['phase'], global_id=int(gid), id_scope='global' if phase['aligned'] else 'local',
+        row = dict(frac_frames_projected=phase.get('frac_frames_projected', 0.),
+                   frac_frames_outside_arena=phase.get('frac_frames_outside_arena', 0.), phase=phase['phase'], global_id=int(gid), id_scope='global' if phase['aligned'] else 'local',
                    local_column=int(phase['columns'][i]), n_events=float(nevents[i]), rate_in=rin[i], rate_out=rout[i],
                    object_proximity_index=observed[i], preferred_object=preferred, p_value=p[i], q_value=q[i],
                    is_object_cell=bool(p[i] < opts.alpha and observed[i] > 0),
@@ -137,7 +138,8 @@ def displacement(table, caches, opts):
 
 
 def example_figures(table, caches, folder, opts):
-    ranked = table[table.phase == 'SAMPLE'].sort_values(['p_value', 'object_proximity_index'], ascending=[True, False])
+    ranked = table[table.phase == 'SAMPLE'].sort_values(['is_object_cell_strict', 'is_object_cell', 'p_value', 'object_proximity_index'],
+                        ascending=[False, False, True, False], na_position='last')
     for _, row in ranked.head(opts.n_examples).iterrows():
         gid = int(row.global_id)
         names = [p for p in ['OF1', 'SAMPLE', 'TEST', 'OF2'] if p in caches]
@@ -165,10 +167,27 @@ def example_figures(table, caches, folder, opts):
                     ax.add_patch(Circle((obj.x_cm, obj.y_cm), opts.radius, fill=False, color='orange'))
                 ax.set(xlim=(-25,25), ylim=(-25,25), aspect='equal')
             axes[0, j].set_title(name+' | célula '+str(gid))
-            null = cache['null'][:, i]; axes[2, j].hist(null[np.isfinite(null)], bins=25, color='.6')
+            null = cache['null'][:, i]; finite_null = null[np.isfinite(null)]
+            hist_range = (-1, 1) if len(finite_null) and np.ptp(finite_null) < 1e-10 else None
+            axes[2, j].hist(finite_null, bins=25, range=hist_range, color='.6')
             obs = table[(table.phase == name) & (table.global_id == gid)].object_proximity_index.iloc[0]
             axes[2, j].axvline(obs, color='red'); axes[2, j].set_xlabel('Índice proximidad (nulo)')
         fig.tight_layout(); fig.savefig(folder / ('example_%04d.png' % gid), dpi=110); plt.close(fig)
+
+
+def flag_of_controls(table, aligned):
+    table['sig_in_OF_control'] = pd.Series(np.nan, index=table.index, dtype=object)
+    controls = table[table.phase.isin(['OF1', 'OF2'])]
+    if aligned and set(controls.phase) == {'OF1', 'OF2'}:
+        # An available control requires the cell to be present in both OF phases.
+        for gid, group in controls.groupby('global_id'):
+            if group.is_object_cell.any():
+                table.loc[table.global_id == gid, 'sig_in_OF_control'] = True
+            elif set(group.phase) == {'OF1', 'OF2'}:
+                table.loc[table.global_id == gid, 'sig_in_OF_control'] = False
+    table['is_object_cell_strict'] = (table.is_object_cell &
+                                     table.sig_in_OF_control.eq(False))
+    return table
 
 
 def analyse_session(phases, animal, day, opts, rng, folder):
@@ -189,11 +208,7 @@ def analyse_session(phases, animal, day, opts, rng, folder):
     if not tables:
         raise ValueError('sesión sin fases de objetos reconocibles')
     table = pd.concat(tables, ignore_index=True)
-    if all(p['aligned'] for p in phases):
-        control_ids = set(table[table.phase.isin(['OF1', 'OF2']) & table.is_object_cell].global_id)
-        table['sig_in_OF_control'] = table.global_id.isin(control_ids)
-    else:
-        table['sig_in_OF_control'] = pd.NA
+    table = flag_of_controls(table, all(p['aligned'] for p in phases))
     displaced = displacement(table, caches, opts)
     example_figures(table, caches, folder, opts)
     return table, displaced

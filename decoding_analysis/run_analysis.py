@@ -1,5 +1,6 @@
 """CLI: python -m decoding_analysis.run_analysis {decode,objects,all}."""
 import argparse
+import json
 from pathlib import Path
 import traceback
 import numpy as np
@@ -27,11 +28,15 @@ def decoding_reports(table, root):
     deltas = []
     for (animal, session), group in table.groupby(['animal', 'session_file']):
         errors = group.set_index('phase').median_error_cm
+        z = group.set_index('phase').shuffle_z
         if all(p in errors.index for p in ['SAMPLE', 'TEST', 'OF1', 'OF2']):
             obj = errors[['SAMPLE','TEST']].mean(); of = errors[['OF1','OF2']].mean()
             deltas.append(dict(animal=animal, session_file=session, treatment=group.treatment.iloc[0],
-                               task=group.task.iloc[0], objects_error_cm=obj, of_error_cm=of, delta_cm=obj-of))
-    delta = pd.DataFrame(deltas, columns=['animal','session_file','treatment','task','objects_error_cm','of_error_cm','delta_cm'])
+                               task=group.task.iloc[0], objects_error_cm=obj, of_error_cm=of, delta_cm=obj-of,
+                               objects_shuffle_z=z[['SAMPLE','TEST']].mean(),
+                               of_shuffle_z=z[['OF1','OF2']].mean(),
+                               delta_shuffle_z=z[['SAMPLE','TEST']].mean()-z[['OF1','OF2']].mean()))
+    delta = pd.DataFrame(deltas, columns=['animal','session_file','treatment','task','objects_error_cm','of_error_cm','delta_cm','objects_shuffle_z','of_shuffle_z','delta_shuffle_z'])
     delta.to_csv(root/'decoding_objects_vs_of.csv', index=False)
     tests = []
     for name, values in [('overall', delta.delta_cm)] + [(t, g.delta_cm) for t,g in delta.groupby('treatment')]:
@@ -92,6 +97,7 @@ def parser():
     p.add_argument('--n-shuffles', type=int, default=None, help='Sobrescribe ambos defaults')
     p.add_argument('--decode-shuffles', type=int, default=100)
     p.add_argument('--object-shuffles', type=int, default=500)
+    p.add_argument('--arena-tolerance-cm', type=float, default=2)
     p.add_argument('--radius', type=float, default=5)
     p.add_argument('--min-object-occupancy', type=float, default=2)
     p.add_argument('--alpha', type=float, default=.05)
@@ -112,12 +118,21 @@ def main():
         p.error('bins/sigma/radio > 0 y k-folds >= 2')
     if min(opts.decode_shuffles, opts.object_shuffles, opts.n_examples, opts.fold_gap_s,
            opts.decode_min_speed, opts.object_min_speed, opts.decode_min_events,
-           opts.object_min_events, opts.min_object_occupancy) < 0 or not 0 < opts.alpha < 1:
+           opts.object_min_events, opts.min_object_occupancy, opts.arena_tolerance_cm) < 0 or not 0 < opts.alpha < 1:
         p.error('parámetros negativos o alpha inválida')
+    if not np.isfinite(opts.arena_tolerance_cm):
+        p.error('arena-tolerance-cm debe ser finita')
     root = Path(opts.out_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    with (root/'run_config.json').open('w') as handle:
+        json.dump(vars(opts), handle, indent=2, ensure_ascii=False)
+        handle.write('\n')
+    session_file = opts.session
+    if session_file and not session_file.endswith('.mat'):
+        session_file += '.mat'
     sessions = [s for s in list_sessions(opts.data_dir) if
                 (not opts.animal or s['animal'] == opts.animal) and
-                (not opts.session or s['session_file'] == opts.session)]
+                (not session_file or s['session_file'] == session_file)]
     if not sessions: raise SystemExit('No se encontraron sesiones')
     rng = np.random.default_rng(opts.seed)
     decoded, objects, displaced, failures = [], [], [], []
@@ -126,7 +141,7 @@ def main():
         print('Procesando %s / %s' % (animal, filename), flush=True)
         try:
             data = load_session(animal, filename, opts.data_dir)
-            day, phases = session_phases(data)
+            day, phases = session_phases(data, arena_tolerance_cm=opts.arena_tolerance_cm)
             task, treatment = category(day)
             metadata = dict(animal=animal, session_file=filename, day_name=day, task=task, treatment=treatment)
         except Exception as err:
@@ -137,7 +152,7 @@ def main():
                 folder = root/('decoding' if mode == 'decode' else 'object_cells')/animal/stem
                 folder.mkdir(parents=True, exist_ok=True)
                 if mode == 'decode':
-                    _, dp = session_phases(data, common=opts.cells == 'common')
+                    _, dp = session_phases(data, common=opts.cells == 'common', arena_tolerance_cm=opts.arena_tolerance_cm)
                     binned = [bin_phase(ph, opts.time_bin) for ph in dp]
                     eligible = [b['valid'] & (b['speed'] >= opts.decode_min_speed) for b in binned]
                     if opts.equalize_duration:
@@ -146,7 +161,8 @@ def main():
                     rows, nulls = [], []
                     for ph, b, mask in zip(dp, binned, eligible):
                         metrics, predictions, null = decode_phase(b, opts, rng, mask)
-                        row = dict(metadata, phase=ph['phase'], has_objects=ph['phase'] in ['SAMPLE','TEST'], **metrics)
+                        row = dict(metadata, frac_frames_projected=ph['frac_frames_projected'],
+                                   frac_frames_outside_arena=ph['frac_frames_outside_arena'], phase=ph['phase'], has_objects=ph['phase'] in ['SAMPLE','TEST'], **metrics)
                         rows.append(row); nulls.append(null)
                         if opts.save_predictions:
                             predictions.to_csv(folder/('predictions_'+ph['phase'].replace('/','_')+'.csv'), index=False)
@@ -178,7 +194,8 @@ def main():
         disp.to_csv(root/'object_cells'/'object_displacement_summary.csv', index=False)
         counts = table.groupby(['animal','session_file','task','treatment','phase']).agg(
             n_cells=('global_id','size'), n_eligible=('p_value','count'),
-            n_object_cells=('is_object_cell','sum'), n_object_cells_fdr=('is_object_cell_fdr','sum')).reset_index()
+            n_object_cells=('is_object_cell','sum'), n_object_cells_strict=('is_object_cell_strict','sum'), n_object_cells_fdr=('is_object_cell_fdr','sum')).reset_index()
+        counts['fraction_object_cells_strict'] = counts.n_object_cells_strict/counts.n_cells
         counts['fraction_object_cells'] = counts.n_object_cells/counts.n_cells
         counts.to_csv(root/'object_cells'/'object_cell_counts.csv', index=False)
         for (a, f), group in counts.groupby(['animal','session_file']):

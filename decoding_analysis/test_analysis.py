@@ -1,15 +1,21 @@
 """Focused checks for leakage, mapping, coordinate precedence and null arithmetic."""
 import tempfile
+import contextlib
+import io
+import json
+import warnings
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 import numpy as np
 import pandas as pd
 from scipy.io import savemat
 from core.data_loader import load_session
-from .common import bh_q, load_object_coords, session_phases
-from .decoding import bin_phase, prepare_folds, fold_counts
-from .object_cells import analyse_phase
-from .run_analysis import parser
+from core.place_fields import threshold_event_frames
+from .common import activity, bh_q, load_object_coords, session_phases
+from .decoding import bin_phase, prepare_folds, fold_counts, decode_phase, cross_validate
+from .object_cells import analyse_phase, flag_of_controls, example_figures
+from .run_analysis import parser, decoding_reports, main as run_main
 
 
 class AnalysisTests(unittest.TestCase):
@@ -26,6 +32,143 @@ class AnalysisTests(unittest.TestCase):
                     y=10*np.cos(t), S=(rng.random((len(t),3)) < .025).astype(float),
                     speed=np.full(len(t),5.), valid=np.ones(len(t),bool),
                     ids=np.arange(3), columns=np.arange(3), aligned=True)
+
+    def test_empty_and_incomplete_bins(self):
+        phase = self.phase()
+        phase['t'] = phase['t'].copy(); phase['t'][800:] += 3
+        phase['dt'] = np.r_[np.diff(phase['t']), .05]
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', RuntimeWarning)
+            b = bin_phase(phase, .5)
+        empty = np.asarray(b['aggregate'].sum(axis=1)).ravel() == 0
+        self.assertEqual(empty.sum(), 6)
+        self.assertFalse(b['valid'][empty].any())
+        self.assertFalse(b['valid'][79])
+        self.assertTrue(np.isfinite(b['xy']).all())
+        self.assertTrue(b['valid'][86:].all())
+        opts = self.options(); opts.decode_shuffles = 2
+        metrics, _, _ = decode_phase(b, opts, np.random.default_rng(4))
+        self.assertGreater(metrics['n_bins'], 0)
+
+    def test_vector_events_equal_core(self):
+        rng = np.random.default_rng(14)
+        S = rng.normal(size=(701, 27)); source = rng.normal(size=(219, 27))
+        S[rng.random(S.shape) < .07] = np.nan
+        source[rng.random(source.shape) < .11] = np.nan
+        S[0, 0] = np.inf; source[0, 0] = -np.inf
+        source[:, 1] = 0; source[2:, 2] = np.nan
+        for src in [None, source]:
+            expected = np.column_stack([threshold_event_frames(S[:, i],
+                       threshold_source=None if src is None else src[:, i])[0]
+                       for i in range(S.shape[1])])
+            np.testing.assert_array_equal(activity(S, source=src), expected)
+        source[:, 2] = np.nan
+        with self.assertRaisesRegex(ValueError, 'insuficientes datos'):
+            activity(S, source=source)
+
+    def test_arena_projection_and_gap_occupancy(self):
+        phase = self.phase(); phase['x'][:] = 0; phase['y'][:] = 0
+        phase['x'][:48] = 26; phase['x'][48:160] = 28
+        phase['x'][160:208] = np.nan
+        phase['t'][800:] += 3
+        data = dict(phase, type='simple', v=phase['speed'])
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            _, phases = session_phases(data)
+        ph = phases[0]
+        self.assertIn('ARENA', output.getvalue())
+        self.assertAlmostEqual(ph['frac_frames_projected'], .03)
+        self.assertAlmostEqual(ph['frac_frames_outside_arena'], .07)
+        self.assertTrue(ph['valid'][:48].all())
+        self.assertTrue((np.hypot(ph['x'][:48], ph['y'][:48]) < 25).all())
+        self.assertFalse(ph['valid'][48:208].any())
+        self.assertFalse(ph['valid'][799]); self.assertAlmostEqual(ph['dt'][799], .05)
+        self.assertEqual(data['x'][0], 26)
+        _, no_tolerance = session_phases(data, arena_tolerance_cm=0)
+        self.assertFalse(no_tolerance[0]['valid'][:48].any())
+        data.pop('v')
+        _, calculated_speed = session_phases(data)
+        self.assertTrue(np.isfinite(calculated_speed[0]['speed']).all())
+
+    def test_strict_control_flags(self):
+        table = pd.DataFrame([dict(phase=p, global_id=g, is_object_cell=sig)
+                              for p, g, sig in [('SAMPLE', 0, True), ('OF1', 0, False),
+                              ('OF2', 0, False), ('SAMPLE', 1, True), ('OF1', 1, True),
+                              ('OF2', 1, False), ('SAMPLE', 2, True), ('OF1', 2, False)]])
+        flagged = flag_of_controls(table.copy(), True).query("phase == 'SAMPLE'")
+        self.assertEqual(list(flagged.is_object_cell_strict), [True, False, False])
+        self.assertTrue(pd.isna(flagged.sig_in_OF_control.iloc[2]))
+        unavailable = flag_of_controls(table.copy(), False)
+        self.assertTrue(unavailable.sig_in_OF_control.isna().all())
+        self.assertFalse(unavailable.is_object_cell_strict.any())
+        missing = flag_of_controls(table[table.phase != 'OF2'].copy(), True)
+        self.assertFalse(missing.is_object_cell_strict.any())
+
+    def test_shuffle_cache_and_used_cells(self):
+        opts = self.options(); opts.decode_shuffles = 8
+        b = bin_phase(self.phase(duration=65), opts.time_bin)
+        seed = 10
+        metrics, prediction, null = decode_phase(b, opts, np.random.default_rng(seed))
+        folds, pixels = prepare_folds(b, opts, b['valid'])
+        rng = np.random.default_rng(seed)
+        cross_validate(b, folds, pixels, opts, rng=rng)
+        shifts = rng.integers(60, len(b['xy'])-60+1, size=8)
+        direct = [np.median(cross_validate(b, folds, pixels, opts, shift=int(s))) for s in shifts]
+        np.testing.assert_array_equal(null, direct)
+        self.assertEqual(metrics['n_cells_used'], prediction.groupby('fold').n_cells_fold.first().median())
+        opts.activity = 'S'
+        before = fold_counts(b, folds[0]['train'], opts, 61)
+        opts.decode_shuffles = 0
+        decode_phase(b, opts, np.random.default_rng(seed))
+        np.testing.assert_array_equal(before, fold_counts(b, folds[0]['train'], opts, 61))
+
+    def test_example_nearly_constant_null(self):
+        phase = self.phase(); opts = self.options(); opts.n_examples = 1
+        opts.object_shuffles = 5
+        coords = pd.DataFrame([dict(object_id='A1', x_cm=0, y_cm=0, is_placeholder=0)])
+        table, cache = analyse_phase(phase, coords, opts, np.random.default_rng(4))
+        table = flag_of_controls(table, False)
+        cache['speed_mask'] = np.ones(len(phase['t']), bool)
+        cache['null'][:] = -1
+        cache['null'][0] = np.nextafter(-1., 0.)
+        with tempfile.TemporaryDirectory() as tmp:
+            example_figures(table, {'SAMPLE': cache}, Path(tmp), opts)
+            self.assertEqual(len(list(Path(tmp).glob('example_*.png'))), 1)
+
+    def test_comparison_shuffle_z(self):
+        rows = [dict(animal='M', session_file='session.mat', treatment='VEH', task='SD',
+                     phase=p, median_error_cm=e, shuffle_z=z,
+                     shuffle_median_of_medians_cm=20, chance_median_error_cm=20)
+                for p, e, z in [('OF1', 5, -2), ('OF2', 7, -4),
+                                ('SAMPLE', 4, -6), ('TEST', 6, -8)]]
+        with tempfile.TemporaryDirectory() as tmp:
+            decoding_reports(pd.DataFrame(rows), Path(tmp))
+            delta = pd.read_csv(Path(tmp)/'decoding_objects_vs_of.csv').iloc[0]
+            self.assertEqual(delta.delta_cm, -1)
+            self.assertEqual(delta.delta_shuffle_z, -4)
+
+    def test_cli_session_suffix_and_provenance(self):
+        phase = self.phase()
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)/'data'/'M'; data.mkdir(parents=True)
+            savemat(data/'recording.day.mat', dict(pos=dict(x=phase['x'], y=phase['y'],
+                    v=phase['speed']), act=dict(S=phase['S'], t=phase['t']),
+                    sess=dict(day_name='recording')))
+            for i, session in enumerate(['recording.day', 'recording.day.mat']):
+                out = Path(tmp)/('results%d' % i)
+                args = ['run_analysis', 'decode', '--data-dir', str(data.parent),
+                        '--out-dir', str(out), '--session', session, '--n-shuffles', '0',
+                        '--arena-tolerance-cm', '1.5', '--n-examples', '0']
+                with patch('sys.argv', args), contextlib.redirect_stdout(io.StringIO()):
+                    run_main()
+                config = json.loads((out/'run_config.json').read_text())
+                self.assertEqual(config['session'], session)
+                self.assertEqual(config['arena_tolerance_cm'], 1.5)
+                self.assertEqual(config['decode_shuffles'], 0)
+                self.assertEqual(config['object_shuffles'], 0)
+                summary = pd.read_csv(out/'decoding'/'decoding_summary.csv')
+                self.assertEqual(summary.session_file.iloc[0], 'recording.day.mat')
+                self.assertEqual(summary.frac_frames_projected.iloc[0], 0)
+                self.assertIn('n_cells_used', summary)
 
     def test_training_never_uses_test_or_gap(self):
         opts = self.options(); binned = bin_phase(self.phase(), opts.time_bin)

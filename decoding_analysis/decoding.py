@@ -18,13 +18,12 @@ def bin_phase(phase, width):
     aggregate = sparse.csr_matrix((np.ones(good.sum()), (labels[good], np.flatnonzero(good))),
                                    shape=(n, len(t)))
     nf = np.asarray(aggregate.sum(axis=1)).ravel()
-    if np.any(nf == 0):
-        raise ValueError('bins temporales vacíos; revisar time-bin/timestamps')
-    xy = np.column_stack([aggregate @ np.nan_to_num(phase[k]) / nf for k in ['x', 'y']])
-    speed = aggregate @ np.nan_to_num(phase['speed']) / nf
+    divisor = np.maximum(nf, 1)
+    xy = np.column_stack([aggregate @ np.nan_to_num(phase[k]) / divisor for k in ['x', 'y']])
+    speed = aggregate @ np.nan_to_num(phase['speed']) / divisor
     valid = np.asarray(aggregate @ (~phase['valid']).astype(int)).ravel() == 0
     durations = np.asarray(aggregate @ phase['dt']).ravel()
-    valid &= np.abs(durations - width) < max(.01, .1 * width)
+    valid &= (nf > 0) & (np.abs(durations - width) < max(.01, .1 * width))
     return dict(xy=xy, speed=speed, valid=valid, aggregate=aggregate, labels=labels,
                 width=width, times=t[0] + (np.arange(n)+.5)*width, S=phase['S'])
 
@@ -70,6 +69,8 @@ def prepare_folds(binned, opts, eligible):
 
 def fold_counts(binned, train, opts, shift):
     # Shift the complete bin timeline, including pauses; do not concatenate running bins.
+    if opts.activity == 'S' and 'amplitude_counts' in binned:
+        return np.roll(binned['amplitude_counts'], shift, axis=0)
     n = len(train)
     source_bins = np.roll(train, -shift)
     frame_mask = (binned['labels'] < n)
@@ -116,12 +117,20 @@ def cross_validate(binned, folds, pixels, opts, shift=0, rng=None):
 def decode_phase(binned, opts, rng, eligible=None):
     if eligible is None:
         eligible = binned['valid'] & (binned['speed'] >= opts.decode_min_speed)
+    if opts.activity == 'S':
+        binned['amplitude_counts'] = np.asarray(binned['aggregate'] @ activity(binned['S'], 'S'))
     folds, pixels = prepare_folds(binned, opts, eligible)
     prediction = cross_validate(binned, folds, pixels, opts, rng=rng)
     shifts = shift_choices(len(binned['xy']), opts.time_bin, rng, opts.decode_shuffles)
-    null = np.array([np.median(cross_validate(binned, folds, pixels, opts, shift=int(s))) for s in shifts])
+    null_by_shift = {}
+    for s in shifts:
+        shift = int(s)
+        if shift not in null_by_shift:
+            null_by_shift[shift] = np.median(cross_validate(binned, folds, pixels, opts, shift=shift))
+    null = np.array([null_by_shift[int(s)] for s in shifts])
     obs = float(prediction.error_cm.median())
-    metrics = dict(n_cells=binned['S'].shape[1], n_cells_min_fold=int(prediction.n_cells_fold.min()),
+    metrics = dict(n_cells=binned['S'].shape[1],
+                   n_cells_used=float(prediction.groupby('fold').n_cells_fold.first().median()), n_cells_min_fold=int(prediction.n_cells_fold.min()),
                    n_bins=len(prediction), running_time_s=len(prediction)*opts.time_bin,
                    time_bin_s=opts.time_bin, min_speed=opts.decode_min_speed,
                    activity_mode=opts.activity, median_error_cm=obs,
