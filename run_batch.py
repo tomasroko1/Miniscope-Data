@@ -18,6 +18,7 @@ from core.data_loader import (
     mapping_columns,
 )
 from core.place_fields import gaussian_rate_maps_matlab
+from core.caliali_loader import find_caliali_traces_path, read_caliali_traces
 
 
 ARENA_RADIUS_CM = 25.0
@@ -155,7 +156,7 @@ def _process_local_only(animal, subsessions, session_out, phase_names):
 
 
 def process_session(animal, session_file, data_dir=None, out_dir="results",
-                    category_parts=None):
+                    category_parts=None, caliali_dir=None):
     print(f"Procesando {animal} - {session_file}...", flush=True)
     data = load_session(animal, session_file, data_dir=data_dir)
     session_out = os.path.join(
@@ -167,26 +168,68 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
     day_name = str(getattr(data.get("sess"), "day_name", ""))
     phases = _phase_names(day_name, len(subsessions))
 
-    if data["type"] == "simple":
-        common_neurons = np.arange(data["n_neurons"], dtype=int)
-        columns_per_sub = [common_neurons.copy()]
-        mapping = None
-    else:
-        mapping = np.asarray(data["mapping"], dtype=float)
-        common_neurons = get_common_neurons(mapping)
-        try:
-            columns_per_sub = [
-                mapping_columns(mapping, common_neurons, index, sub["S"].shape[1])
-                for index, sub in enumerate(subsessions)
-            ]
-        except ValueError as error:
-            print(
-                f"  El mapping no alinea todas las fases ({error}). "
-                "Se guardarán mapas por fase, sin enlazar IDs.",
-                flush=True,
-            )
-            _process_local_only(animal, subsessions, session_out, phases)
-            return
+    used_caliali = False
+    if caliali_dir:
+        caliali_path = find_caliali_traces_path(caliali_dir, animal, session_file, day_name)
+        if caliali_path:
+            try:
+                subs_S, caliali_fps = read_caliali_traces(caliali_path)
+                if len(subs_S) == len(subsessions):
+                    n_neurons_caliali = subs_S[0].shape[1]
+                    print(
+                        f"  [CaliAli] Integrando trazas unificadas de {n_neurons_caliali} neuronas "
+                        f"desde {os.path.basename(caliali_path)}",
+                        flush=True,
+                    )
+                    for i, sub in enumerate(subsessions):
+                        s_cali = subs_S[i]
+                        x_old = np.asarray(sub["x"], dtype=float)
+                        y_old = np.asarray(sub["y"], dtype=float)
+                        n_cali = len(s_cali)
+                        if len(x_old) != n_cali:
+                            t_old = np.linspace(0.0, 1.0, len(x_old))
+                            t_new = np.linspace(0.0, 1.0, n_cali)
+                            sub["x"] = np.interp(t_new, t_old, x_old)
+                            sub["y"] = np.interp(t_new, t_old, y_old)
+                        sub["S"] = s_cali
+                        sub["t"] = np.arange(n_cali) / caliali_fps
+                        sub["n_neurons"] = n_neurons_caliali
+                    common_neurons = np.arange(n_neurons_caliali, dtype=int)
+                    columns_per_sub = [common_neurons.copy() for _ in range(len(subsessions))]
+                    mapping = np.column_stack([common_neurons] * len(subsessions))
+                    used_caliali = True
+                else:
+                    print(
+                        f"  [AVISO CaliAli] Discrepancia de subsesiones: {len(subs_S)} en CaliAli vs {len(subsessions)} en base. "
+                        "Se continúa con datos base.",
+                        flush=True,
+                    )
+            except Exception as e:
+                print(f"  [AVISO CaliAli] Error cargando trazas ({e}). Se continúa con datos base.", flush=True)
+        else:
+            print(f"  [AVISO] No se encontraron trazas de CaliAli para {animal} ({session_file}) en {caliali_dir}.", flush=True)
+
+    if not used_caliali:
+        if data["type"] == "simple":
+            common_neurons = np.arange(data["n_neurons"], dtype=int)
+            columns_per_sub = [common_neurons.copy()]
+            mapping = None
+        else:
+            mapping = np.asarray(data["mapping"], dtype=float)
+            common_neurons = get_common_neurons(mapping)
+            try:
+                columns_per_sub = [
+                    mapping_columns(mapping, common_neurons, index, sub["S"].shape[1])
+                    for index, sub in enumerate(subsessions)
+                ]
+            except ValueError as error:
+                print(
+                    f"  El mapping no alinea todas las fases ({error}). "
+                    "Se guardarán mapas por fase, sin enlazar IDs.",
+                    flush=True,
+                )
+                _process_local_only(animal, subsessions, session_out, phases)
+                return
 
     if len(common_neurons) == 0:
         if data["type"] == "merged":
@@ -261,7 +304,7 @@ def is_dlc_defect_session(animal, session_file, day_name=""):
 
 
 def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, session_file=None,
-                exclude_day_names=None, include_dlc_defects=False):
+                exclude_day_names=None, include_dlc_defects=False, caliali_dir=None):
     data_dir = data_dir or get_data_dir()
     excluded = set(exclude_day_names or ())
     sessions = [
@@ -304,6 +347,7 @@ def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, se
                 data_dir=data_dir,
                 out_dir=out_dir,
                 category_parts=category_parts,
+                caliali_dir=caliali_dir,
             )
         except Exception as error:
             print(
@@ -318,7 +362,11 @@ def main():
     )
     parser.add_argument("--animal", help="Procesar solamente un animal")
     parser.add_argument("--session", dest="session_file", help="Procesar solamente un archivo .mat")
-    parser.add_argument("--data-dir", default=None, help="Carpeta con las carpetas de animales")
+    parser.add_argument("--data-dir", default=None, help="Carpeta con las carpetas de animales (ej. DataBase)")
+    parser.add_argument(
+        "--caliali-dir", default=None,
+        help="Carpeta raiz de GDi para integrar trazas unificadas de CaliAli (ej. /mnt/NAS/Miniscopes/Reg_CA1/GDi)",
+    )
     parser.add_argument(
         "--out-dir", default="results/Mapas_por_tipo",
         help="Carpeta base; se crean subcarpetas por animal y metadata de sesión",
@@ -339,6 +387,7 @@ def main():
         session_file=args.session_file,
         exclude_day_names=args.exclude_day,
         include_dlc_defects=args.include_dlc_defects,
+        caliali_dir=args.caliali_dir,
     )
 
 
