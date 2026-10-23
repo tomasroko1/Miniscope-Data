@@ -23,6 +23,7 @@ notas.txt
 
 # local documentation
 *.md
+!/ESTRUCTURA_DATOS_GDI.md
 /README.md
 /FORMATO_DATOS_MINISCOPE.md
 /EXPLICACION_MAPPING_Y_ESTABILIDAD_HABL.md
