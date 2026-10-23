@@ -1,9 +1,10 @@
 """caliali_loader.py
 
-Módulo para localizar y cargar datos procesados por CaliAli en GDi/
+Modulo para localizar y cargar datos procesados por CaliAli en GDi/
 (archivos MATLAB v7.3 HDF5 CaliAli_traces_*.mat) y alinearlos con el tracking.
 """
 
+from __future__ import print_function
 import os
 import re
 from pathlib import Path
@@ -12,7 +13,7 @@ import numpy as np
 
 
 def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
-    """Localiza el archivo CaliAli_traces_*.mat correspondiente a una sesión en GDi."""
+    """Localiza el archivo CaliAli_traces_*.mat correspondiente a una sesion en GDi."""
     if not caliali_dir or not os.path.exists(caliali_dir):
         return None
 
@@ -63,7 +64,7 @@ def read_caliali_traces(mat_path):
             fps = float(fps_ds[0, 0] if fps_ds.ndim > 1 else fps_ds[0])
 
         if "traces" not in f:
-            raise KeyError(f"No se encontró el grupo 'traces' en {mat_path}. Claves: {list(f.keys())}")
+            raise KeyError("No se encontro el grupo 'traces' en {}. Claves: {}".format(mat_path, list(f.keys())))
 
         traces_obj = f["traces"]
 
@@ -108,4 +109,4 @@ def read_caliali_traces(mat_path):
 
                 return [s_arr], fps
 
-        raise ValueError(f"Estructura no reconocida para 'traces' en {mat_path}")
+        raise ValueError("Estructura no reconocida para 'traces' en {}".format(mat_path))

@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 """generar_diagnostico_dlc_excluidos.py
 
-Genera una imagen diagnóstica con la trayectoria del animal (sin actividad neuronal)
+Genera una imagen diagnostica con la trayectoria del animal (sin actividad neuronal)
 para las sesiones con problemas conocidos en la inferencia de DeepLabCut:
 - R004 - T3_XsS_CNO (2026_06_24)
 - R005 - T3_XsS_VEH (2026_06_24)
@@ -12,8 +13,18 @@ el batch de place fields con mapas anomalos, se excluyen del batch principal
 misma jerarquia de carpetas.
 """
 
-import argparse
+from __future__ import print_function
+import sys
 import os
+
+if sys.version_info[0] < 3:
+    try:
+        os.execvp("python3", ["python3"] + sys.argv)
+    except Exception:
+        sys.stderr.write("ERROR: Este script requiere Python 3. Ejecuta con: python3 " + " ".join(sys.argv) + "\n")
+        sys.exit(1)
+
+import argparse
 import re
 from pathlib import Path
 
@@ -59,7 +70,7 @@ def _phase_names(day_name, n_subsessions):
         return ["OF1", "OF2", "OF3", "OF4"]
     if "_SD_" in day_name or "_XsS_" in day_name:
         return ["OF1", "SAMPLE", "TEST", "OF2"]
-    return [f"Sub {index + 1}" for index in range(n_subsessions)]
+    return ["Sub {}".format(index + 1) for index in range(n_subsessions)]
 
 
 def is_dlc_defect_target(animal, session_file, day_name=""):
@@ -125,17 +136,20 @@ def render_trajectory_diagnostic(animal, session_file, day_name, subsessions, se
             ax.scatter(
                 x_val[out_arena], y_val[out_arena],
                 color="#d62728", s=6, alpha=0.9,
-                label=f"Fuera arena ({n_out})", zorder=3, rasterized=True
+                label="Fuera arena ({})".format(n_out), zorder=3, rasterized=True
             )
 
         ax.set_title(
-            f"{phases[i]}\n{len(x_val)} frames | {n_out} ({pct_out:.1f}%) fuera arena",
+            "{}\n{} frames | {} ({:.1f}%) fuera arena".format(
+                phases[i], len(x_val), n_out, pct_out
+            ),
             fontsize=9,
         )
 
     fig.suptitle(
-        f"{animal} | {day_name} ({session_file}) - SESIÓN EXCLUIDA DEL BATCH DE MAPAS\n"
-        f"Motivo: Artefactos severos de tracking en DeepLabCut (saltos bruscos hacia punto fijo / fuera de límites)",
+        "{0} | {1} ({2}) - SESION EXCLUIDA DEL BATCH DE MAPAS\nMotivo: Artefactos severos de tracking en DeepLabCut (saltos bruscos hacia punto fijo / fuera de limites)".format(
+            animal, day_name, session_file
+        ),
         fontsize=10, fontweight="bold", color="#b22222", y=0.98,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.90))
@@ -143,28 +157,28 @@ def render_trajectory_diagnostic(animal, session_file, day_name, subsessions, se
     img_path = os.path.join(session_out, "trayectoria_anomala_deeplabcut.png")
     fig.savefig(img_path, dpi=140, facecolor="white")
     plt.close(fig)
-    print(f"  [OK] Guardada trayectoria diagnostica en: {img_path}", flush=True)
+    print("  [OK] Guardada trayectoria diagnostica en: {}".format(img_path), flush=True)
 
     # Dejar archivo de texto explicativo en la carpeta
     readme_path = os.path.join(session_out, "LEEME_EXCLUSION_DLC.txt")
-    with open(readme_path, "w", encoding="utf-8") as f:
+    with open(readme_path, "w") as f:
         f.write(
-            f"SESION EXCLUIDA DE LA GENERACION DE MAPAS ESPACIALES (PLACE FIELDS)\n"
-            f"{'='*70}\n\n"
-            f"Animal: {animal}\n"
-            f"Archivo: {session_file}\n"
-            f"Day Name: {day_name}\n\n"
-            f"MOTIVO DE LA EXCLUSION:\n"
-            f"Esta sesion presenta artefactos graves en la inferencia de tracking de DeepLabCut (DLC),\n"
-            f"evidenciados por saltos bruscos y anomalos de posicion hacia un punto determinado del campo\n"
-            f"o fuera del perimetro circular de la arena.\n\n"
-            f"Para evitar contaminar el analisis con place fields espurios causados por errores del modelo\n"
-            f"de tracking conductual, esta sesion fue omitida del batch principal de generacion de figuras.\n\n"
-            f"DIAGNOSTICO VISUAL:\n"
-            f"Consulte el archivo 'trayectoria_anomala_deeplabcut.png' en esta misma carpeta para\n"
-            f"inspeccionar la trayectoria del animal y los saltos anomalos (sin actividad neuronal).\n"
+            "SESION EXCLUIDA DE LA GENERACION DE MAPAS ESPACIALES (PLACE FIELDS)\n"
+            + ("=" * 70) + "\n\n"
+            + "Animal: {}\n".format(animal)
+            + "Archivo: {}\n".format(session_file)
+            + "Day Name: {}\n\n".format(day_name)
+            + "MOTIVO DE LA EXCLUSION:\n"
+            + "Esta sesion presenta artefactos graves en la inferencia de tracking de DeepLabCut (DLC),\n"
+            + "evidenciados por saltos bruscos y anomalos de posicion hacia un punto determinado del campo\n"
+            + "o fuera del perimetro circular de la arena.\n\n"
+            + "Para evitar contaminar el analisis con place fields espurios causados por errores del modelo\n"
+            + "de tracking conductual, esta sesion fue omitida del batch principal de generacion de figuras.\n\n"
+            + "DIAGNOSTICO VISUAL:\n"
+            + "Consulte el archivo 'trayectoria_anomala_deeplabcut.png' en esta misma carpeta para\n"
+            + "inspeccionar la trayectoria del animal y los saltos anomalos (sin actividad neuronal).\n"
         )
-    print(f"  [OK] Guardado LEEME explicativo en: {readme_path}", flush=True)
+    print("  [OK] Guardado LEEME explicativo en: {}".format(readme_path), flush=True)
 
 
 def process_excluded_sessions(data_dir=None, out_dir="results/Mapas_por_tipo"):
@@ -181,20 +195,20 @@ def process_excluded_sessions(data_dir=None, out_dir="results/Mapas_por_tipo"):
             target_sessions.append((s, day_name))
 
     if not target_sessions:
-        print(f"No se encontraron sesiones objetivo (R004 XsS CNO o R005 XsS VEH) en {data_dir}")
+        print("No se encontraron sesiones objetivo (R004 XsS CNO o R005 XsS VEH) en {}".format(data_dir))
         return
 
-    print(f"Procesando {len(target_sessions)} sesiones con anomalias de DLC...")
+    print("Procesando {} sesiones con anomalias de DLC...".format(len(target_sessions)))
     for s, day_name in target_sessions:
         animal = s["animal"]
         session_file = s["session_file"]
         category_parts = _session_category(day_name)
         session_out = os.path.join(
-            out_dir, animal, *category_parts,
+            out_dir, animal, *(category_parts or ("Otros",)),
             session_file.replace(".mat", ""),
         )
         os.makedirs(session_out, exist_ok=True)
-        print(f"Procesando {animal} - {session_file} ({day_name}) -> {session_out}...")
+        print("Procesando {} - {} ({}) -> {}...".format(animal, session_file, day_name, session_out))
         data = load_session(animal, session_file, data_dir=data_dir)
         subsessions = [data] if data["type"] == "simple" else data["subsessions"]
         render_trajectory_diagnostic(animal, session_file, day_name, subsessions, session_out)

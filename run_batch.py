@@ -1,5 +1,18 @@
-import argparse
+#!/usr/bin/env python3
+from __future__ import print_function
+import sys
 import os
+
+# Si se ejecuta con 'python' en un sistema donde apunta a Python 2.7,
+# re-ejecutar automaticamente con python3 preservando todos los argumentos:
+if sys.version_info[0] < 3:
+    try:
+        os.execvp("python3", ["python3"] + sys.argv)
+    except Exception:
+        sys.stderr.write("ERROR: Este script requiere Python 3. Ejecuta con: python3 " + " ".join(sys.argv) + "\n")
+        sys.exit(1)
+
+import argparse
 import re
 from pathlib import Path
 
@@ -33,7 +46,7 @@ def _phase_names(day_name, n_subsessions):
         return ["OF1", "OF2", "OF3", "OF4"]
     if "_SD_" in day_name or "_XsS_" in day_name:
         return ["OF1", "SAMPLE", "TEST", "OF2"]
-    return [f"Sub {index + 1}" for index in range(n_subsessions)]
+    return ["Sub {}".format(index + 1) for index in range(n_subsessions)]
 
 
 def _prepare_rate_maps(subsessions):
@@ -106,7 +119,9 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
             cb.ax.tick_params(labelsize=6)
             cb.set_label("S", fontsize=6)
         ax_trajectory.set_title(
-            f"{phase_names[phase_index]} (local {local_id})\n{n_positive} S > 0 samples",
+            "{0} (local {1})\n{2} S > 0 samples".format(
+                phase_names[phase_index], local_id, n_positive
+            ),
             fontsize=8,
         )
 
@@ -122,11 +137,12 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
         cb = fig.colorbar(image, ax=ax_map, fraction=.046, pad=.03)
         cb.ax.tick_params(labelsize=6)
         cb.set_label("act/s", fontsize=6)
-        ax_map.set_title(f"Activity rate map\nmax: {peak_rate:.2f} act/s", fontsize=8)
+        ax_map.set_title("Activity rate map\nmax: {:.2f} act/s".format(peak_rate), fontsize=8)
 
     fig.suptitle(
-        f"{animal} | {cell_label} | Tracked in {n_phases}/{n_phases} phases "
-        f"({','.join(present)})",
+        "{0} | {1} | Tracked in {2}/{2} phases ({3})".format(
+            animal, cell_label, n_phases, ','.join(present)
+        ),
         fontsize=11, fontweight="semibold", y=.985,
     )
     fig.tight_layout(rect=(0, 0, 1, .94), w_pad=.8, h_pad=.8)
@@ -138,26 +154,27 @@ def _process_local_only(animal, subsessions, session_out, phase_names):
     """Draw local cells per phase if the cross-phase mapping is ambiguous."""
     total = 0
     for phase_index, (sub, cache) in enumerate(zip(subsessions, _prepare_rate_maps(subsessions))):
-        local_out = os.path.join(session_out, f"phase_{phase_index + 1}_local_only")
+        local_out = os.path.join(session_out, "phase_{}_local_only".format(phase_index + 1))
         os.makedirs(local_out, exist_ok=True)
         columns = [(local_column, local_column) for local_column in range(sub["S"].shape[1])]
         for local_column in range(sub["S"].shape[1]):
             _render_cell_figure(
-                animal, f"local column {local_column}",
-                f"local_{local_column:04d}.png", [columns[local_column]],
+                animal, "local column {}".format(local_column),
+                "local_{:04d}.png".format(local_column), [columns[local_column]],
                 [cache], [phase_names[phase_index]], local_out,
             )
             total += 1
     print(
-        f"  Guardados {total} mapas locales en {session_out}; "
-        "no se enlazaron IDs entre fases.",
+        "  Guardados {} mapas locales en {}; no se enlazaron IDs entre fases.".format(
+            total, session_out
+        ),
         flush=True,
     )
 
 
 def process_session(animal, session_file, data_dir=None, out_dir="results",
                     category_parts=None, caliali_dir=None):
-    print(f"Procesando {animal} - {session_file}...", flush=True)
+    print("Procesando {} - {}...".format(animal, session_file), flush=True)
     data = load_session(animal, session_file, data_dir=data_dir)
     session_out = os.path.join(
         out_dir, animal, *(category_parts or ("Otros",)),
@@ -177,8 +194,9 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
                 if len(subs_S) == len(subsessions):
                     n_neurons_caliali = subs_S[0].shape[1]
                     print(
-                        f"  [CaliAli] Integrando trazas unificadas de {n_neurons_caliali} neuronas "
-                        f"desde {os.path.basename(caliali_path)}",
+                        "  [CaliAli] Integrando trazas unificadas de {} neuronas desde {}".format(
+                            n_neurons_caliali, os.path.basename(caliali_path)
+                        ),
                         flush=True,
                     )
                     for i, sub in enumerate(subsessions):
@@ -200,14 +218,20 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
                     used_caliali = True
                 else:
                     print(
-                        f"  [AVISO CaliAli] Discrepancia de subsesiones: {len(subs_S)} en CaliAli vs {len(subsessions)} en base. "
-                        "Se continúa con datos base.",
+                        "  [AVISO CaliAli] Discrepancia de subsesiones: {} en CaliAli vs {} en base. Se continua con datos base.".format(
+                            len(subs_S), len(subsessions)
+                        ),
                         flush=True,
                     )
             except Exception as e:
-                print(f"  [AVISO CaliAli] Error cargando trazas ({e}). Se continúa con datos base.", flush=True)
+                print("  [AVISO CaliAli] Error cargando trazas ({}). Se continua con datos base.".format(e), flush=True)
         else:
-            print(f"  [AVISO] No se encontraron trazas de CaliAli para {animal} ({session_file}) en {caliali_dir}.", flush=True)
+            print(
+                "  [AVISO] No se encontraron trazas de CaliAli para {} ({}) en {}.".format(
+                    animal, session_file, caliali_dir
+                ),
+                flush=True,
+            )
 
     if not used_caliali:
         if data["type"] == "simple":
@@ -224,8 +248,9 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
                 ]
             except ValueError as error:
                 print(
-                    f"  El mapping no alinea todas las fases ({error}). "
-                    "Se guardarán mapas por fase, sin enlazar IDs.",
+                    "  El mapping no alinea todas las fases ({}). Se guardaran mapas por fase, sin enlazar IDs.".format(
+                        error
+                    ),
                     flush=True,
                 )
                 _process_local_only(animal, subsessions, session_out, phases)
@@ -236,7 +261,7 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
             print("  Sin IDs comunes a todas las fases; mapas locales por fase.", flush=True)
             _process_local_only(animal, subsessions, session_out, phases)
             return
-        print(f"  Sin neuronas: {animal} - {session_file}", flush=True)
+        print("  Sin neuronas: {} - {}".format(animal, session_file), flush=True)
         return
 
     caches = _prepare_rate_maps(subsessions)
@@ -249,12 +274,12 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
                         else int(mapping[global_id, phase_index]))
             columns.append((local_column, local_id))
         _render_cell_figure(
-            animal, f"Global cell {int(global_id):04d}",
-            f"neuron_{int(global_id):04d}.png", columns, caches, phases,
+            animal, "Global cell {:04d}".format(int(global_id)),
+            "neuron_{:04d}.png".format(int(global_id)), columns, caches, phases,
             session_out,
         )
 
-    print(f"Listos {len(common_neurons)} mapas en {session_out}", flush=True)
+    print("Listos {} mapas en {}".format(len(common_neurons), session_out), flush=True)
 
 
 def _session_day_name(animal, session_file, data_dir):
@@ -322,16 +347,17 @@ def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, se
             day_name = ""
         if day_name in excluded:
             print(
-                f"[EXCLUIDA] {session['animal']} / {session['session_file']} "
-                f"(day_name={day_name})",
+                "[EXCLUIDA] {} / {} (day_name={})".format(
+                    session["animal"], session["session_file"], day_name
+                ),
                 flush=True,
             )
             continue
         if not include_dlc_defects and is_dlc_defect_session(session["animal"], session["session_file"], day_name):
             print(
-                f"[EXCLUIDA POR DLC DEFECTUOSO] {session['animal']} / {session['session_file']} "
-                f"(day_name={day_name}): Saltos anomalos de DeepLabCut hacia punto fijo del campo. "
-                f"Omitida del batch de place fields (usar generar_diagnostico_dlc_excluidos.py).",
+                "[EXCLUIDA POR DLC DEFECTUOSO] {} / {} (day_name={}): Saltos anomalos de DeepLabCut hacia punto fijo del campo. Omitida del batch de place fields (usar generar_diagnostico_dlc_excluidos.py).".format(
+                    session["animal"], session["session_file"], day_name
+                ),
                 flush=True,
             )
             continue
@@ -351,7 +377,9 @@ def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, se
             )
         except Exception as error:
             print(
-                f"[OMITIDA] {session['animal']} / {session['session_file']}: {error}",
+                "[OMITIDA] {} / {}: {}".format(
+                    session["animal"], session["session_file"], error
+                ),
                 flush=True,
             )
 
@@ -369,7 +397,7 @@ def main():
     )
     parser.add_argument(
         "--out-dir", default="results/Mapas_por_tipo",
-        help="Carpeta base; se crean subcarpetas por animal y metadata de sesión",
+        help="Carpeta base; se crean subcarpetas por animal y metadata de sesion",
     )
     parser.add_argument(
         "--exclude-day", action="append", default=[],
