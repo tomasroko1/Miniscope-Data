@@ -237,8 +237,31 @@ def _session_category(day_name):
     return ("Otros",)
 
 
+def is_dlc_defect_session(animal, session_file, day_name=""):
+    """Detecta sesiones con artefactos conocidos de saltos bruscos en DeepLabCut."""
+    a = str(animal).upper()
+    s = str(session_file).upper()
+    d = str(day_name).upper()
+
+    is_r004 = "R004" in a or "M4" in a
+    is_r004_target = is_r004 and (
+        ("XSS" in d and "CNO" in d) or
+        ("XSS" in s and "CNO" in s) or
+        ("2026_06_24" in s and ("CNO" in d or "CNO" in s or not d))
+    )
+
+    is_r005 = "R005" in a or "M5" in a
+    is_r005_target = is_r005 and (
+        ("XSS" in d and "VEH" in d) or
+        ("XSS" in s and "VEH" in s) or
+        ("2026_06_24" in s and ("VEH" in d or "VEH" in s or not d))
+    )
+
+    return is_r004_target or is_r005_target
+
+
 def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, session_file=None,
-                exclude_day_names=None):
+                exclude_day_names=None, include_dlc_defects=False):
     data_dir = data_dir or get_data_dir()
     excluded = set(exclude_day_names or ())
     sessions = [
@@ -258,6 +281,14 @@ def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, se
             print(
                 f"[EXCLUIDA] {session['animal']} / {session['session_file']} "
                 f"(day_name={day_name})",
+                flush=True,
+            )
+            continue
+        if not include_dlc_defects and is_dlc_defect_session(session["animal"], session["session_file"], day_name):
+            print(
+                f"[EXCLUIDA POR DLC DEFECTUOSO] {session['animal']} / {session['session_file']} "
+                f"(day_name={day_name}): Saltos anomalos de DeepLabCut hacia punto fijo del campo. "
+                f"Omitida del batch de place fields (usar generar_diagnostico_dlc_excluidos.py).",
                 flush=True,
             )
             continue
@@ -296,6 +327,10 @@ def main():
         "--exclude-day", action="append", default=[],
         help="Excluir una etiqueta sess.day_name exacta; se puede repetir (p. ej. HabL)",
     )
+    parser.add_argument(
+        "--include-dlc-defects", action="store_true", default=False,
+        help="Forzar procesamiento de sesiones con artefactos conocidos de DLC (R004-XsS-CNO, R005-XsS-VEH)",
+    )
     args = parser.parse_args()
     process_all(
         data_dir=args.data_dir,
@@ -303,6 +338,7 @@ def main():
         animal=args.animal,
         session_file=args.session_file,
         exclude_day_names=args.exclude_day,
+        include_dlc_defects=args.include_dlc_defects,
     )
 
 
