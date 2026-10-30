@@ -13,12 +13,25 @@ import numpy as np
 
 
 def _find_mat_in_dir(folder):
-    """Revisa si en una carpeta existe un archivo CaliAli_traces_*.mat."""
+    """Revisa si en una carpeta existe un archivo de trazas de CaliAli."""
     if not os.path.isdir(folder):
         return None
     try:
-        for fn in os.listdir(folder):
-            if fn.lower().startswith("caliali_traces_") and fn.lower().endswith(".mat"):
+        entries = os.listdir(folder)
+        # Prioridad 1: archivo que empiece con caliali_traces
+        for fn in entries:
+            fn_l = fn.lower()
+            if fn_l.startswith("caliali_traces") and fn_l.endswith(".mat"):
+                return os.path.join(folder, fn)
+        # Prioridad 2: cualquier .mat que contenga 'traces' o 'trace'
+        for fn in entries:
+            fn_l = fn.lower()
+            if fn_l.endswith(".mat") and ("traces" in fn_l or "trace" in fn_l):
+                return os.path.join(folder, fn)
+        # Prioridad 3: cualquier .mat de caliali que contenga 'result'
+        for fn in entries:
+            fn_l = fn.lower()
+            if fn_l.endswith(".mat") and "caliali" in fn_l and "result" in fn_l:
                 return os.path.join(folder, fn)
     except (OSError, IOError):
         pass
@@ -70,20 +83,42 @@ def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
 
         for sd in candidates:
             sd_path = os.path.join(ad_path, sd)
+            sd_clean = sd.replace(" ", "_")
 
-            # Buscar en subdirectorios tipo 'CaliAli_results', 'results', etc.
+            # Patrón estándar universal según estructura de CaliAli:
+            # CaliAli_traces_<ANIMAL_DIR>_<SESSION_DIR>.mat
+            direct_patterns = [
+                os.path.join(sd_path, "CaliAli_results", "CaliAli_traces_{}_{}.mat".format(ad, sd_clean)),
+                os.path.join(sd_path, "CaliAli_results", "CaliAli_traces_{}_{}.mat".format(ad, sd)),
+                os.path.join(sd_path, "caliali_results", "CaliAli_traces_{}_{}.mat".format(ad, sd_clean)),
+                os.path.join(sd_path, "CaliAli_traces_{}_{}.mat".format(ad, sd_clean)),
+                os.path.join(sd_path, "CaliAli_traces_{}_{}.mat".format(ad, sd)),
+            ]
+            for dp in direct_patterns:
+                if os.path.isfile(dp):
+                    return dp
+
+            # Revisar carpetas típicas de resultados
+            for subname in ("CaliAli_results", "caliali_results", "results", "output", "traces"):
+                full_sub = os.path.join(sd_path, subname)
+                found = _find_mat_in_dir(full_sub)
+                if found:
+                    return found
+
+            # Revisar cualquier otra subcarpeta de la sesión (omitiendo bloques brutos de adquisición)
             try:
                 for sub in os.listdir(sd_path):
-                    sub_lower = sub.lower()
-                    if "caliali" in sub_lower or "result" in sub_lower:
-                        full_sub = os.path.join(sd_path, sub)
+                    if sub.upper() in ("A_AV1", "B_SAMPLE", "C_TEST", "D_AV2", "MINIAN", ".ZARR"):
+                        continue
+                    full_sub = os.path.join(sd_path, sub)
+                    if os.path.isdir(full_sub):
                         found = _find_mat_in_dir(full_sub)
                         if found:
                             return found
             except (OSError, IOError):
                 pass
 
-            # Buscar directamente en sd_path
+            # Buscar directamente en la raíz de sd_path
             found = _find_mat_in_dir(sd_path)
             if found:
                 return found
