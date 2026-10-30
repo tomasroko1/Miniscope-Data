@@ -158,10 +158,31 @@ echo "=========================================================="
 
 DATA_DIR="/mnt/NAS/Miniscopes/Reg_CA1/DataBase"
 CALIALI_DIR="/mnt/NAS/Miniscopes/Reg_CA1/GDi"
-OUT_DIR="${REPO_DIR}/results/Mapas_por_tipo_caliali"
+
+# Detectar si el usuario especificó --signal o --out-dir en los argumentos
+SIGNAL="S"
+CUSTOM_OUT=""
+PREV_ARG=""
+for arg in "$@"; do
+    if [ "${PREV_ARG}" = "--signal" ]; then
+        SIGNAL="${arg//./_}"
+    elif [ "${PREV_ARG}" = "--out-dir" ]; then
+        CUSTOM_OUT="${arg}"
+    fi
+    PREV_ARG="${arg}"
+done
+
+if [ -n "${CUSTOM_OUT}" ]; then
+    OUT_DIR="${CUSTOM_OUT}"
+elif [ "${SIGNAL}" = "S" ]; then
+    OUT_DIR="${REPO_DIR}/results/Mapas_por_tipo_caliali"
+else
+    OUT_DIR="${REPO_DIR}/results/Mapas_por_tipo_caliali_${SIGNAL}"
+fi
 
 echo "Data (tracking):   ${DATA_DIR}"
 echo "CaliAli (senales): ${CALIALI_DIR}"
+echo "Senal elegida:     ${SIGNAL}"
 echo "Destino salida:    ${OUT_DIR}"
 echo "=========================================================="
 
