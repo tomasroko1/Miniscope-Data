@@ -5,21 +5,45 @@ set -e
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${REPO_DIR}"
 
-# Seleccionar el Python del entorno virtual (.venv) que tiene matplotlib, scipy, etc.
-if [ -f "${REPO_DIR}/.venv/bin/python" ]; then
-    PYTHON="${REPO_DIR}/.venv/bin/python"
-elif [ -f "${REPO_DIR}/.venv/bin/python3" ]; then
-    PYTHON="${REPO_DIR}/.venv/bin/python3"
-elif command -v python3 >/dev/null 2>&1; then
+# Buscar un intérprete de Python que tenga matplotlib instalado
+PYTHON=""
+CANDIDATES=(
+    "${REPO_DIR}/.venv/bin/python"
+    "${REPO_DIR}/.venv/bin/python3"
+    "/mnt/NAS/Tomas/results/minian_registration_env_20260929/bin/python"
+    "/mnt/NAS/Tomas/.venv/bin/python"
+    "${HOME}/.venv/bin/python"
+    "${HOME}/miniconda3/bin/python"
+    "${HOME}/anaconda3/bin/python"
+    "python3"
+    "python"
+)
+
+for CAND in "${CANDIDATES[@]}"; do
+    if [ -x "${CAND}" ] || command -v "${CAND}" >/dev/null 2>&1; then
+        if "${CAND}" -c "import matplotlib, scipy, h5py" >/dev/null 2>&1; then
+            PYTHON="${CAND}"
+            break
+        elif "${CAND}" -c "import matplotlib" >/dev/null 2>&1; then
+            PYTHON="${CAND}"
+            break
+        fi
+    fi
+done
+
+# Si ningún Python tiene matplotlib, instalarlo en el espacio de usuario
+if [ -z "${PYTHON}" ]; then
+    echo "Ningún Python del sistema tiene matplotlib instalado."
+    echo "Instalando dependencias mínimas en el espacio de usuario (~/.local)..."
+    python3 -m pip install --user matplotlib h5py scipy numpy || pip3 install --user matplotlib h5py scipy numpy || true
     PYTHON="python3"
-else
-    PYTHON="python"
 fi
 
 echo "=========================================================="
 echo "Usando intérprete: ${PYTHON}"
-${PYTHON} -c "import sys; print('Python version: ' + sys.version.split()[0])"
-${PYTHON} -c "import matplotlib; print('Matplotlib version: ' + matplotlib.__version__)" 2>/dev/null || echo "[AVISO] matplotlib no encontrado en este python"
+${PYTHON} -c "import sys; print('Python: ' + sys.version.split()[0] + ' (' + sys.executable + ')')"
+${PYTHON} -c "import matplotlib; print('Matplotlib: ' + matplotlib.__version__)"
+${PYTHON} -c "import h5py; print('h5py: ' + h5py.__version__)"
 echo "=========================================================="
 
 DATA_DIR="/mnt/NAS/Miniscopes/Reg_CA1/DataBase"
