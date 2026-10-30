@@ -12,8 +12,21 @@ import h5py
 import numpy as np
 
 
+def _find_mat_in_dir(folder):
+    """Revisa si en una carpeta existe un archivo CaliAli_traces_*.mat."""
+    if not os.path.isdir(folder):
+        return None
+    try:
+        for fn in os.listdir(folder):
+            if fn.lower().startswith("caliali_traces_") and fn.lower().endswith(".mat"):
+                return os.path.join(folder, fn)
+    except (OSError, IOError):
+        pass
+    return None
+
+
 def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
-    """Localiza el archivo CaliAli_traces_*.mat correspondiente a una sesion en GDi."""
+    """Localiza el archivo CaliAli_traces_*.mat correspondiente a una sesion en GDi de forma instantanea."""
     if not caliali_dir or not os.path.exists(caliali_dir):
         return None
 
@@ -21,11 +34,14 @@ def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
     date_str = date_match.group(0) if date_match else ""
 
     animal_clean = animal.split("_")[0].upper()
-    animal_dirs = [
-        d for d in os.listdir(caliali_dir)
-        if os.path.isdir(os.path.join(caliali_dir, d))
-        and (d.upper() == animal_clean or d.upper().startswith(animal_clean + "_") or animal_clean in d.upper())
-    ]
+    try:
+        animal_dirs = [
+            d for d in os.listdir(caliali_dir)
+            if os.path.isdir(os.path.join(caliali_dir, d))
+            and (d.upper() == animal_clean or d.upper().startswith(animal_clean + "_") or animal_clean in d.upper())
+        ]
+    except (OSError, IOError):
+        return None
 
     if not animal_dirs:
         return None
@@ -34,26 +50,43 @@ def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
 
     for ad in animal_dirs:
         ad_path = os.path.join(caliali_dir, ad)
-        for sd in os.listdir(ad_path):
-            sd_path = os.path.join(ad_path, sd)
-            if not os.path.isdir(sd_path):
-                continue
+        try:
+            session_dirs = [d for d in os.listdir(ad_path) if os.path.isdir(os.path.join(ad_path, d))]
+        except (OSError, IOError):
+            continue
+
+        # 1. Probar carpetas que coincidan con fecha o day_name
+        candidates = []
+        for sd in session_dirs:
             matches_date = bool(date_str and date_str in sd)
             clean_sd = re.sub(r"[^A-Za-z0-9]", "", sd).upper()
             matches_day = bool(clean_day and clean_day in clean_sd)
             if matches_date or matches_day:
-                # Busqueda insensible a mayusculas/minusculas de CaliAli_traces_*.mat
-                for root, dirs, files in os.walk(sd_path):
-                    for fn in files:
-                        if fn.lower().startswith("caliali_traces_") and fn.lower().endswith(".mat"):
-                            return os.path.join(root, fn)
+                candidates.append(sd)
 
-        # Fallback amplio en toda la carpeta del animal si la fecha esta en el nombre del archivo CaliAli_traces_*DATE*.mat
-        if date_str:
-            for root, dirs, files in os.walk(ad_path):
-                for fn in files:
-                    if fn.lower().startswith("caliali_traces_") and fn.lower().endswith(".mat") and date_str in fn:
-                        return os.path.join(root, fn)
+        # 2. Si no hubo coincidencia directa pero hay date_str, buscar en cualquier carpeta que tenga la fecha
+        if not candidates and date_str:
+            candidates = [sd for sd in session_dirs if date_str in sd]
+
+        for sd in candidates:
+            sd_path = os.path.join(ad_path, sd)
+
+            # Buscar en subdirectorios tipo 'CaliAli_results', 'results', etc.
+            try:
+                for sub in os.listdir(sd_path):
+                    sub_lower = sub.lower()
+                    if "caliali" in sub_lower or "result" in sub_lower:
+                        full_sub = os.path.join(sd_path, sub)
+                        found = _find_mat_in_dir(full_sub)
+                        if found:
+                            return found
+            except (OSError, IOError):
+                pass
+
+            # Buscar directamente en sd_path
+            found = _find_mat_in_dir(sd_path)
+            if found:
+                return found
 
     return None
 
