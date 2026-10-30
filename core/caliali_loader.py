@@ -185,14 +185,19 @@ def _extract_session_vector(f, sess_ds):
     return np.array(sess_ds).ravel()
 
 
-def read_caliali_traces(mat_path):
+def read_caliali_traces(mat_path, signal_name="S"):
     """Lee CaliAli_traces_*.mat (formato MATLAB v7.3 HDF5 o v7 clásico).
 
+    Args:
+        mat_path: ruta al archivo .mat de CaliAli_traces
+        signal_name: nombre del campo a extraer ('S', 'C_raw', 'C')
+
     Devuelve:
-        subs_S: lista de arrays [S_0, S_1, S_2, S_3], cada uno (n_frames_i, n_neurons)
+        subs_S: lista de arrays [sig_0, sig_1, sig_2, sig_3], cada uno (n_frames_i, n_neurons)
         fps: frecuencia de muestreo en Hz
     """
     fps = 20.0
+    sig_key = signal_name.replace(".", "_")
 
     # Intento 1: Formato HDF5 (MATLAB v7.3)
     try:
@@ -214,7 +219,9 @@ def read_caliali_traces(mat_path):
                 subs_S = []
                 for ref in np.asarray(traces_obj).ravel():
                     sub_grp = f[ref]
-                    s_arr = _extract_sparse_or_dense(f, sub_grp["S"])
+                    if sig_key not in sub_grp:
+                        raise KeyError(f"Clave '{sig_key}' no encontrada en subsesion. Claves disponibles: {list(sub_grp.keys())}")
+                    s_arr = _extract_sparse_or_dense(f, sub_grp[sig_key])
                     if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
                         s_arr = s_arr.T
                     subs_S.append(s_arr)
@@ -227,17 +234,17 @@ def read_caliali_traces(mat_path):
                 if sub_keys:
                     subs_S = []
                     for k in sorted(sub_keys):
-                        s_arr = _extract_sparse_or_dense(f, traces_obj[k]["S"])
+                        s_arr = _extract_sparse_or_dense(f, traces_obj[k][sig_key])
                         if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
                             s_arr = s_arr.T
                         subs_S.append(s_arr)
                     return subs_S, fps
 
-                # 2b. Matriz o Cell array 'S'
-                if "S" in traces_obj:
-                    extracted = _extract_sparse_or_dense(f, traces_obj["S"])
+                # 2b. Matriz o Cell array con nombre sig_key
+                if sig_key in traces_obj:
+                    extracted = _extract_sparse_or_dense(f, traces_obj[sig_key])
 
-                    # Si 'S' era un cell array de 4 matrices, ya viene como lista
+                    # Si el campo era un cell array de 4 matrices, ya viene como lista
                     if isinstance(extracted, list):
                         subs_S = []
                         for sub_mat in extracted:
@@ -261,7 +268,7 @@ def read_caliali_traces(mat_path):
 
                     return [s_arr], fps
 
-            raise ValueError("Estructura no reconocida para 'traces' en {}".format(mat_path))
+            raise ValueError("Estructura no reconocida para 'traces' o campo '{}' en {}".format(sig_key, mat_path))
 
     except (OSError, IOError):
         # Intento 2: Formato MATLAB v5 / v7 clásico (scipy.io.loadmat)
@@ -272,7 +279,7 @@ def read_caliali_traces(mat_path):
             raise KeyError("No se encontro 'traces' en {}".format(mat_path))
         fps = float(getattr(d, "fps", getattr(traces, "fps", 20.0)))
 
-        S = getattr(traces, "S")
+        S = getattr(traces, sig_key)
         if hasattr(S, "toarray"):  # scipy sparse matrix
             S = S.toarray()
 

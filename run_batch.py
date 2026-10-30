@@ -49,8 +49,8 @@ def _phase_names(day_name, n_subsessions):
     return ["Sub {}".format(index + 1) for index in range(n_subsessions)]
 
 
-def _prepare_rate_maps(subsessions):
-    """Use the same continuous-S Gaussian rate-map recipe as the HabL gallery."""
+def _prepare_rate_maps(subsessions, signal_name="S"):
+    """Use continuous Gaussian rate-map recipe with non-negative rectified activity."""
     caches = []
     for sub in subsessions:
         x = np.asarray(sub["x"], dtype=float)
@@ -71,6 +71,7 @@ def _prepare_rate_maps(subsessions):
             "x": x, "y": y, "t": t, "S": positive_s,
             "rates": rates, "edges": edges,
             "sample_rate_hz": meta["sample_rate_hz"],
+            "signal_name": signal_name,
         })
     return caches
 
@@ -86,7 +87,7 @@ def _style_axis(ax):
 
 def _render_cell_figure(animal, cell_label, cell_filename, columns,
                         caches, phase_names, output_dir):
-    """Draw trajectory/S amplitude and continuous-S rate map; save PNG only."""
+    """Draw trajectory/signal amplitude and continuous rate map; save PNG only."""
     n_phases = len(caches)
     fig, axes = plt.subplots(2, n_phases, figsize=(3.2 * n_phases, 6.2), squeeze=False)
     present = []
@@ -97,6 +98,7 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
         _style_axis(ax_map)
         local_column, local_id = columns[phase_index]
         signal = cache["S"][:, local_column]
+        signal_name = cache.get("signal_name", "S")
         positive = signal > 0
         n_positive = int(positive.sum())
         rate_map = cache["rates"][local_column]
@@ -117,10 +119,10 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
             )
             cb = fig.colorbar(scatter, ax=ax_trajectory, fraction=.046, pad=.03)
             cb.ax.tick_params(labelsize=6)
-            cb.set_label("S", fontsize=6)
+            cb.set_label(signal_name, fontsize=6)
         ax_trajectory.set_title(
-            "{0} (local {1})\n{2} S > 0 samples".format(
-                phase_names[phase_index], local_id, n_positive
+            "{0} (local {1})\n{2} {3} > 0 samples".format(
+                phase_names[phase_index], local_id, n_positive, signal_name
             ),
             fontsize=8,
         )
@@ -128,6 +130,7 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
         edges = cache["edges"]
         cmap = plt.cm.turbo.copy()
         cmap.set_bad(color="white")
+        unit_label = "act/s" if signal_name == "S" else "AU/s"
         image = ax_map.imshow(
             rate_map.T, origin="lower",
             extent=[edges[0], edges[-1], edges[0], edges[-1]],
@@ -136,8 +139,8 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
         )
         cb = fig.colorbar(image, ax=ax_map, fraction=.046, pad=.03)
         cb.ax.tick_params(labelsize=6)
-        cb.set_label("act/s", fontsize=6)
-        ax_map.set_title("Activity rate map\nmax: {:.2f} act/s".format(peak_rate), fontsize=8)
+        cb.set_label(unit_label, fontsize=6)
+        ax_map.set_title("Activity rate map\nmax: {:.2f} {}".format(peak_rate, unit_label), fontsize=8)
 
     fig.suptitle(
         "{0} | {1} | Tracked in {2}/{2} phases ({3})".format(
@@ -150,10 +153,10 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
     plt.close(fig)
 
 
-def _process_local_only(animal, subsessions, session_out, phase_names):
+def _process_local_only(animal, subsessions, session_out, phase_names, signal_name="S"):
     """Draw local cells per phase if the cross-phase mapping is ambiguous."""
     total = 0
-    for phase_index, (sub, cache) in enumerate(zip(subsessions, _prepare_rate_maps(subsessions))):
+    for phase_index, (sub, cache) in enumerate(zip(subsessions, _prepare_rate_maps(subsessions, signal_name=signal_name))):
         local_out = os.path.join(session_out, "phase_{}_local_only".format(phase_index + 1))
         os.makedirs(local_out, exist_ok=True)
         columns = [(local_column, local_column) for local_column in range(sub["S"].shape[1])]
@@ -173,8 +176,9 @@ def _process_local_only(animal, subsessions, session_out, phase_names):
 
 
 def process_session(animal, session_file, data_dir=None, out_dir="results",
-                    category_parts=None, caliali_dir=None, overwrite=False):
-    print("Procesando {} - {}...".format(animal, session_file), flush=True)
+                    category_parts=None, caliali_dir=None, overwrite=False,
+                    signal_name="S"):
+    print("Procesando {} - {} (signal={})...".format(animal, session_file, signal_name), flush=True)
     data = load_session(animal, session_file, data_dir=data_dir)
     session_out = os.path.join(
         out_dir, animal, *(category_parts or ("Otros",)),
@@ -190,12 +194,12 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
         caliali_path = find_caliali_traces_path(caliali_dir, animal, session_file, day_name)
         if caliali_path:
             try:
-                subs_S, caliali_fps = read_caliali_traces(caliali_path)
+                subs_S, caliali_fps = read_caliali_traces(caliali_path, signal_name=signal_name)
                 if len(subs_S) == len(subsessions):
                     n_neurons_caliali = subs_S[0].shape[1]
                     print(
-                        "  [CaliAli] Integrando trazas unificadas de {} neuronas desde {}".format(
-                            n_neurons_caliali, os.path.basename(caliali_path)
+                        "  [CaliAli] Integrando trazas unificadas ({}) de {} neuronas desde {}".format(
+                            signal_name, n_neurons_caliali, os.path.basename(caliali_path)
                         ),
                         flush=True,
                     )
@@ -307,7 +311,7 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
             flush=True,
         )
 
-    caches = _prepare_rate_maps(subsessions)
+    caches = _prepare_rate_maps(subsessions, signal_name=signal_name)
     common_index = {int(global_id): index for index, global_id in enumerate(common_neurons)}
     for global_id in missing_neurons:
         columns = []
@@ -371,9 +375,16 @@ def is_dlc_defect_session(animal, session_file, day_name=""):
     return is_r004_target or is_r005_target
 
 
-def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, session_file=None,
+def process_all(data_dir=None, out_dir=None, animal=None, session_file=None,
                 exclude_day_names=None, include_dlc_defects=False, caliali_dir=None,
-                overwrite=False):
+                overwrite=False, signal="S"):
+    sig_clean = signal.replace(".", "_")
+    if out_dir is None:
+        if caliali_dir:
+            out_dir = "results/Mapas_por_tipo_caliali" if sig_clean == "S" else "results/Mapas_por_tipo_caliali_{}".format(sig_clean)
+        else:
+            out_dir = "results/Mapas_por_tipo" if sig_clean == "S" else "results/Mapas_por_tipo_{}".format(sig_clean)
+
     data_dir = data_dir or get_data_dir()
     excluded = set(exclude_day_names or ())
     sessions = [
@@ -419,6 +430,7 @@ def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, se
                 category_parts=category_parts,
                 caliali_dir=caliali_dir,
                 overwrite=overwrite,
+                signal_name=signal,
             )
         except Exception as error:
             print(
@@ -452,8 +464,12 @@ def main():
         help="Carpeta raiz de GDi para integrar trazas unificadas de CaliAli (ej. /mnt/NAS/Miniscopes/Reg_CA1/GDi)",
     )
     parser.add_argument(
-        "--out-dir", default="results/Mapas_por_tipo",
-        help="Carpeta base; se crean subcarpetas por animal y metadata de sesion",
+        "--signal", default="S", choices=["S", "C_raw", "C", "C.raw"],
+        help="Señal de actividad a mapear ('S', 'C_raw' o 'C'). Rectificada en 0 si es continua.",
+    )
+    parser.add_argument(
+        "--out-dir", default=None,
+        help="Carpeta base; por defecto 'results/Mapas_por_tipo_caliali_<signal>' o 'results/Mapas_por_tipo_<signal>'",
     )
     parser.add_argument(
         "--exclude-day", action="append", default=[],
@@ -477,6 +493,7 @@ def main():
         include_dlc_defects=args.include_dlc_defects,
         caliali_dir=args.caliali_dir,
         overwrite=args.overwrite,
+        signal=args.signal,
     )
 
 
