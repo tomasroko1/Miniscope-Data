@@ -24,11 +24,13 @@ def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
     animal_dirs = [
         d for d in os.listdir(caliali_dir)
         if os.path.isdir(os.path.join(caliali_dir, d))
-        and (d.upper() == animal_clean or d.upper().startswith(animal_clean + "_"))
+        and (d.upper() == animal_clean or d.upper().startswith(animal_clean + "_") or animal_clean in d.upper())
     ]
 
     if not animal_dirs:
         return None
+
+    clean_day = re.sub(r"[^A-Za-z0-9]", "", day_name).upper() if day_name else ""
 
     for ad in animal_dirs:
         ad_path = os.path.join(caliali_dir, ad)
@@ -37,13 +39,22 @@ def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
             if not os.path.isdir(sd_path):
                 continue
             matches_date = bool(date_str and date_str in sd)
-            matches_day = bool(day_name and day_name.replace("_", "").upper() in sd.replace("_", "").upper())
+            clean_sd = re.sub(r"[^A-Za-z0-9]", "", sd).upper()
+            matches_day = bool(clean_day and clean_day in clean_sd)
             if matches_date or matches_day:
-                results_dir = os.path.join(sd_path, "CaliAli_results")
-                if os.path.isdir(results_dir):
-                    for fn in os.listdir(results_dir):
-                        if fn.startswith("CaliAli_traces_") and fn.endswith(".mat"):
-                            return os.path.join(results_dir, fn)
+                # Busqueda insensible a mayusculas/minusculas de CaliAli_traces_*.mat
+                for root, dirs, files in os.walk(sd_path):
+                    for fn in files:
+                        if fn.lower().startswith("caliali_traces_") and fn.lower().endswith(".mat"):
+                            return os.path.join(root, fn)
+
+        # Fallback amplio en toda la carpeta del animal si la fecha esta en el nombre del archivo CaliAli_traces_*DATE*.mat
+        if date_str:
+            for root, dirs, files in os.walk(ad_path):
+                for fn in files:
+                    if fn.lower().startswith("caliali_traces_") and fn.lower().endswith(".mat") and date_str in fn:
+                        return os.path.join(root, fn)
+
     return None
 
 
