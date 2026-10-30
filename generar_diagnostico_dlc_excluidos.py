@@ -96,8 +96,14 @@ def is_dlc_defect_target(animal, session_file, day_name=""):
     return is_r004_target or is_r005_target
 
 
-def render_trajectory_diagnostic(animal, session_file, day_name, subsessions, session_out):
+def render_trajectory_diagnostic(animal, session_file, day_name, subsessions, session_out, overwrite=False):
     """Dibuja un panel 1x4 con la trayectoria del animal y resalta anomalias de tracking."""
+    img_path = os.path.join(session_out, "trayectoria_anomala_deeplabcut.png")
+    readme_path = os.path.join(session_out, "LEEME_EXCLUSION_DLC.txt")
+    if not overwrite and os.path.exists(img_path) and os.path.exists(readme_path):
+        print("  [YA GENERADO] Diagnostico DLC ya existe en {}. Omitiendo.".format(session_out), flush=True)
+        return
+
     phases = _phase_names(day_name, len(subsessions))
     n_phases = len(subsessions)
 

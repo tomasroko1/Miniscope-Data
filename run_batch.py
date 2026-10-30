@@ -173,7 +173,7 @@ def _process_local_only(animal, subsessions, session_out, phase_names):
 
 
 def process_session(animal, session_file, data_dir=None, out_dir="results",
-                    category_parts=None, caliali_dir=None):
+                    category_parts=None, caliali_dir=None, overwrite=False):
     print("Procesando {} - {}...".format(animal, session_file), flush=True)
     data = load_session(animal, session_file, data_dir=data_dir)
     session_out = os.path.join(
@@ -277,9 +277,39 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
         print("  Sin neuronas: {} - {}".format(animal, session_file), flush=True)
         return
 
+    # Comprobar si ya existen mapas generados para omitir calculos innecesarios
+    existing_pngs = set()
+    if os.path.isdir(session_out) and not overwrite:
+        existing_pngs = {
+            fn for fn in os.listdir(session_out)
+            if fn.startswith("neuron_") and fn.endswith(".png")
+        }
+
+    missing_neurons = [
+        gid for gid in common_neurons
+        if "neuron_{:04d}.png".format(int(gid)) not in existing_pngs
+    ] if not overwrite else list(common_neurons)
+
+    if len(missing_neurons) == 0 and len(common_neurons) > 0:
+        print(
+            "  [YA GENERADA] Todos los {} mapas ya existen en {}. Omitiendo.".format(
+                len(common_neurons), session_out
+            ),
+            flush=True,
+        )
+        return
+
+    if len(missing_neurons) < len(common_neurons):
+        print(
+            "  [REANUDANDO] {} mapas ya existen; generando {} faltantes...".format(
+                len(common_neurons) - len(missing_neurons), len(missing_neurons)
+            ),
+            flush=True,
+        )
+
     caches = _prepare_rate_maps(subsessions)
     common_index = {int(global_id): index for index, global_id in enumerate(common_neurons)}
-    for global_id in common_neurons:
+    for global_id in missing_neurons:
         columns = []
         for phase_index in range(len(subsessions)):
             local_column = int(columns_per_sub[phase_index][common_index[int(global_id)]])
@@ -342,7 +372,8 @@ def is_dlc_defect_session(animal, session_file, day_name=""):
 
 
 def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, session_file=None,
-                exclude_day_names=None, include_dlc_defects=False, caliali_dir=None):
+                exclude_day_names=None, include_dlc_defects=False, caliali_dir=None,
+                overwrite=False):
     data_dir = data_dir or get_data_dir()
     excluded = set(exclude_day_names or ())
     sessions = [
@@ -387,6 +418,7 @@ def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, se
                 out_dir=out_dir,
                 category_parts=category_parts,
                 caliali_dir=caliali_dir,
+                overwrite=overwrite,
             )
         except Exception as error:
             print(
@@ -431,6 +463,10 @@ def main():
         "--include-dlc-defects", action="store_true", default=False,
         help="Forzar procesamiento de sesiones con artefactos conocidos de DLC (R004-XsS-CNO, R005-XsS-VEH)",
     )
+    parser.add_argument(
+        "--overwrite", action="store_true", default=False,
+        help="Regenerar y sobrescribir mapas aunque ya existan",
+    )
     args = parser.parse_args()
     process_all(
         data_dir=args.data_dir,
@@ -438,6 +474,10 @@ def main():
         animal=args.animal,
         session_file=args.session_file,
         exclude_day_names=args.exclude_day,
+        include_dlc_defects=args.include_dlc_defects,
+        caliali_dir=args.caliali_dir,
+        overwrite=args.overwrite,
+    )
         include_dlc_defects=args.include_dlc_defects,
         caliali_dir=args.caliali_dir,
     )
