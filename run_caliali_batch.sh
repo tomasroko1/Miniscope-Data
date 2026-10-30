@@ -80,15 +80,27 @@ if [ -z "${PYTHON}" ]; then
         "$(command -v python 2>/dev/null || true)"
     )
 
-    # Probar candidatos: se busca uno que tenga matplotlib y scipy
+    # Probar candidatos: primero los que tienen matplotlib, scipy Y h5py
     for CAND in "${CANDIDATES[@]}"; do
         if [ -n "${CAND}" ] && [ -x "${CAND}" ]; then
-            if "${CAND}" -c "import matplotlib, scipy" >/dev/null 2>&1; then
+            if "${CAND}" -c "import matplotlib, scipy, h5py" >/dev/null 2>&1; then
                 PYTHON="${CAND}"
                 break
             fi
         fi
     done
+
+    # Si ninguno tiene h5py, buscar uno que tenga matplotlib y scipy
+    if [ -z "${PYTHON}" ]; then
+        for CAND in "${CANDIDATES[@]}"; do
+            if [ -n "${CAND}" ] && [ -x "${CAND}" ]; then
+                if "${CAND}" -c "import matplotlib, scipy" >/dev/null 2>&1; then
+                    PYTHON="${CAND}"
+                    break
+                fi
+            fi
+        done
+    fi
 fi
 
 # 3. Validar si se encontró un intérprete adecuado
@@ -112,7 +124,28 @@ fi
 # Asegurar que h5py esté presente en el Python seleccionado
 if ! "${PYTHON}" -c "import h5py" >/dev/null 2>&1; then
     echo ">> Instalando h5py en el entorno (${PYTHON})..."
-    "${PYTHON}" -m pip install h5py || true
+    ENV_PREFIX="$(dirname "$(dirname "${PYTHON}")")"
+    
+    # Intentar con conda primero para no requerir compilación C/pkg-config
+    CONDA_EXEC=""
+    if command -v conda >/dev/null 2>&1; then
+        CONDA_EXEC="conda"
+    elif [ -x "/mnt/NAS/Tomas/miniconda311/bin/conda" ]; then
+        CONDA_EXEC="/mnt/NAS/Tomas/miniconda311/bin/conda"
+    elif [ -x "${HOME}/miniconda3/bin/conda" ]; then
+        CONDA_EXEC="${HOME}/miniconda3/bin/conda"
+    elif [ -x "${HOME}/anaconda3/bin/conda" ]; then
+        CONDA_EXEC="${HOME}/anaconda3/bin/conda"
+    fi
+
+    if [ -n "${CONDA_EXEC}" ]; then
+        "${CONDA_EXEC}" install -y -p "${ENV_PREFIX}" h5py || true
+    fi
+
+    # Si conda falló o no estaba, intentar pip con solo binarios precompilados
+    if ! "${PYTHON}" -c "import h5py" >/dev/null 2>&1; then
+        "${PYTHON}" -m pip install --only-binary=:all: h5py || "${PYTHON}" -m pip install h5py || true
+    fi
 fi
 
 echo "=========================================================="
