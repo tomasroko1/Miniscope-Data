@@ -159,7 +159,8 @@ echo "=========================================================="
 DATA_DIR="/mnt/NAS/Miniscopes/Reg_CA1/DataBase"
 CALIALI_DIR="/mnt/NAS/Miniscopes/Reg_CA1/GDi"
 
-# Detectar si el usuario especificó --signal o --out-dir en los argumentos
+# Detectar si el usuario especificó --signal, --run-name o --out-dir en los argumentos
+RUN_NAME="${RUN_NAME:-}"
 SIGNAL="S"
 CUSTOM_OUT=""
 PREV_ARG=""
@@ -168,21 +169,31 @@ for arg in "$@"; do
         SIGNAL="${arg//./_}"
     elif [ "${PREV_ARG}" = "--out-dir" ]; then
         CUSTOM_OUT="${arg}"
+    elif [ "${PREV_ARG}" = "--run-name" ] || [ "${PREV_ARG}" = "--tag" ]; then
+        RUN_NAME="${arg}"
     fi
     PREV_ARG="${arg}"
 done
 
 if [ -n "${CUSTOM_OUT}" ]; then
     OUT_DIR="${CUSTOM_OUT}"
-elif [ "${SIGNAL}" = "S" ]; then
-    OUT_DIR="${REPO_DIR}/results/Mapas_por_tipo_caliali"
 else
-    OUT_DIR="${REPO_DIR}/results/Mapas_por_tipo_caliali_${SIGNAL}"
+    BASE_NAME="Mapas_por_tipo_caliali"
+    if [ "${SIGNAL}" != "S" ]; then
+        BASE_NAME="${BASE_NAME}_${SIGNAL}"
+    fi
+    if [ -n "${RUN_NAME}" ]; then
+        BASE_NAME="${BASE_NAME}_${RUN_NAME}"
+    fi
+    OUT_DIR="${REPO_DIR}/results/${BASE_NAME}"
 fi
 
 echo "Data (tracking):   ${DATA_DIR}"
 echo "CaliAli (senales): ${CALIALI_DIR}"
 echo "Senal elegida:     ${SIGNAL}"
+if [ -n "${RUN_NAME}" ]; then
+    echo "Nombre corrida:    ${RUN_NAME}"
+fi
 echo "Destino salida:    ${OUT_DIR}"
 echo "=========================================================="
 

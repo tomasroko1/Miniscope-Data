@@ -91,6 +91,24 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
     n_phases = len(caches)
     fig, axes = plt.subplots(2, n_phases, figsize=(3.2 * n_phases, 6.2), squeeze=False)
     present = []
+
+    # 1. Unificar la escala entre las fases de esta celda
+    max_rate_global = 0.0
+    max_signal_global = 0.0
+    for phase_index, cache in enumerate(caches):
+        local_column, _ = columns[phase_index]
+        sig = cache["S"][:, local_column]
+        pos = sig > 0
+        if pos.any():
+            max_signal_global = max(max_signal_global, float(np.max(sig[pos])))
+        rmap = cache["rates"][local_column]
+        fin = rmap[np.isfinite(rmap)]
+        if fin.size:
+            max_rate_global = max(max_rate_global, float(np.max(fin)))
+
+    vmax_signal = max_signal_global if max_signal_global > 0 else 1.0
+    vmax_rate = max_rate_global if max_rate_global > 0 else 1.0
+
     for phase_index, cache in enumerate(caches):
         ax_trajectory = axes[0, phase_index]
         ax_map = axes[1, phase_index]
@@ -114,7 +132,7 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
             scatter = ax_trajectory.scatter(
                 cache["x"][positive], cache["y"][positive],
                 c=signal[positive], cmap="turbo", vmin=0,
-                vmax=float(np.max(signal[positive])), s=4.5, alpha=.85,
+                vmax=vmax_signal, s=4.5, alpha=.85,
                 linewidths=0, rasterized=True, zorder=2,
             )
             cb = fig.colorbar(scatter, ax=ax_trajectory, fraction=.046, pad=.03)
@@ -134,13 +152,13 @@ def _render_cell_figure(animal, cell_label, cell_filename, columns,
         image = ax_map.imshow(
             rate_map.T, origin="lower",
             extent=[edges[0], edges[-1], edges[0], edges[-1]],
-            cmap=cmap, vmin=0, vmax=peak_rate if peak_rate > 0 else 1,
+            cmap=cmap, vmin=0, vmax=vmax_rate,
             interpolation="nearest", rasterized=True,
         )
         cb = fig.colorbar(image, ax=ax_map, fraction=.046, pad=.03)
         cb.ax.tick_params(labelsize=6)
         cb.set_label(unit_label, fontsize=6)
-        ax_map.set_title("Activity rate map\nmax: {:.2f} {}".format(peak_rate, unit_label), fontsize=8)
+        ax_map.set_title("Activity rate map\npeak: {:.2f} {}".format(peak_rate, unit_label), fontsize=8)
 
     fig.suptitle(
         "{0} | {1} | Tracked in {2}/{2} phases ({3})".format(
@@ -377,13 +395,15 @@ def is_dlc_defect_session(animal, session_file, day_name=""):
 
 def process_all(data_dir=None, out_dir=None, animal=None, session_file=None,
                 exclude_day_names=None, include_dlc_defects=False, caliali_dir=None,
-                overwrite=False, signal="S"):
+                overwrite=False, signal="S", run_name=None):
     sig_clean = signal.replace(".", "_")
     if out_dir is None:
-        if caliali_dir:
-            out_dir = "results/Mapas_por_tipo_caliali" if sig_clean == "S" else "results/Mapas_por_tipo_caliali_{}".format(sig_clean)
-        else:
-            out_dir = "results/Mapas_por_tipo" if sig_clean == "S" else "results/Mapas_por_tipo_{}".format(sig_clean)
+        base_folder = "Mapas_por_tipo_caliali" if caliali_dir else "Mapas_por_tipo"
+        if sig_clean != "S":
+            base_folder += "_{}".format(sig_clean)
+        if run_name:
+            base_folder += "_{}".format(run_name.strip())
+        out_dir = os.path.join("results", base_folder)
 
     data_dir = data_dir or get_data_dir()
     excluded = set(exclude_day_names or ())
@@ -468,8 +488,12 @@ def main():
         help="Señal de actividad a mapear ('S', 'C_raw' o 'C'). Rectificada en 0 si es continua.",
     )
     parser.add_argument(
+        "--run-name", "--tag", dest="run_name", default=None,
+        help="Nombre/sufijo personalizado para la carpeta de resultados (ej. --run-name nuevo_mat)",
+    )
+    parser.add_argument(
         "--out-dir", default=None,
-        help="Carpeta base; por defecto 'results/Mapas_por_tipo_caliali_<signal>' o 'results/Mapas_por_tipo_<signal>'",
+        help="Carpeta base; por defecto 'results/Mapas_por_tipo_caliali_<signal>_<run_name>'",
     )
     parser.add_argument(
         "--exclude-day", action="append", default=[],
@@ -494,6 +518,7 @@ def main():
         caliali_dir=args.caliali_dir,
         overwrite=args.overwrite,
         signal=args.signal,
+        run_name=args.run_name,
     )
 
 
