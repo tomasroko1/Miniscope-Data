@@ -180,6 +180,9 @@ ${PYTHON} generar_diagnostico_dlc_excluidos.py \
     --data-dir "${DATA_DIR}" \
     --out-dir "${OUT_DIR}"
 
+# 3. Limpieza de directorios vacíos que hayan quedado
+find "${OUT_DIR}" -type d -empty -delete 2>/dev/null || true
+
 echo "=========================================================="
 echo "Listo! Proceso finalizado correctamente."
 echo "Resultados en: ${OUT_DIR}"

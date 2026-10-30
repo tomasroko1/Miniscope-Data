@@ -234,6 +234,19 @@ def process_session(animal, session_file, data_dir=None, out_dir="results",
             )
 
     if not used_caliali:
+        if caliali_dir:
+            print(
+                "  [OMITIDA CALIALI] {} ({}) no posee trazas de CaliAli integrables. Se omite de la carpeta CaliAli.".format(
+                    animal, session_file
+                ),
+                flush=True,
+            )
+            if os.path.exists(session_out):
+                import shutil
+                shutil.rmtree(session_out)
+                print("  [LIMPIEZA] Eliminada carpeta previa sin CaliAli: {}".format(session_out), flush=True)
+            return
+
         if data["type"] == "simple":
             common_neurons = np.arange(data["n_neurons"], dtype=int)
             columns_per_sub = [common_neurons.copy()]
@@ -382,6 +395,17 @@ def process_all(data_dir=None, out_dir="results/Mapas_por_tipo", animal=None, se
                 ),
                 flush=True,
             )
+
+
+    # Limpiar directorios que hayan quedado vacíos tras excluir sesiones
+    for root, dirs, files in os.walk(out_dir, topdown=False):
+        for d in dirs:
+            dir_path = os.path.join(root, d)
+            try:
+                if not os.listdir(dir_path):
+                    os.rmdir(dir_path)
+            except Exception:
+                pass
 
 
 def main():

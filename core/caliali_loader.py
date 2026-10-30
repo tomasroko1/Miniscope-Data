@@ -47,66 +47,176 @@ def find_caliali_traces_path(caliali_dir, animal, session_file, day_name=""):
     return None
 
 
+def _extract_sparse_or_dense(f, obj):
+    """Extrae una matriz 2D (densa o sparse de MATLAB v7.3 HDF5) a numpy float32."""
+    if isinstance(obj, h5py.Group):
+        # Sparse matrix de MATLAB v7.3: tiene datasets 'data', 'ir', 'jc'
+        if "data" in obj and "ir" in obj and "jc" in obj:
+            data = np.array(obj["data"], dtype=np.float32)
+            ir = np.array(obj["ir"], dtype=np.int64)
+            jc = np.array(obj["jc"], dtype=np.int64)
+            n_cols = len(jc) - 1
+            n_rows = int(np.max(ir) + 1) if len(ir) > 0 else 0
+            if "MATLAB_sparse" in obj.attrs:
+                try:
+                    n_rows = int(obj.attrs["MATLAB_sparse"])
+                except Exception:
+                    pass
+            from scipy.sparse import csc_matrix
+            mat = csc_matrix((data, ir, jc), shape=(n_rows, n_cols)).toarray()
+            # En HDF5 de MATLAB, las matrices están transpuestas (filas x cols invertidas)
+            return np.asarray(mat, dtype=np.float32)
+
+        # Si el grupo tiene una clave interna 'S'
+        if "S" in obj:
+            return _extract_sparse_or_dense(f, obj["S"])
+
+        raise ValueError("Grupo HDF5 no reconocido como matriz: {}".format(list(obj.keys())))
+
+    elif isinstance(obj, h5py.Dataset):
+        # Si es un dataset numérico regular
+        if obj.dtype.kind in ("f", "i", "u"):
+            return np.array(obj, dtype=np.float32)
+        # Si es un dataset de referencias (Cell array en MATLAB)
+        elif obj.dtype.kind == "O":
+            mats = []
+            for ref in obj.flat:
+                ref_obj = f[ref]
+                mats.append(_extract_sparse_or_dense(f, ref_obj))
+            return mats
+
+    raise ValueError("Objeto no convertible a matriz: {}".format(type(obj)))
+
+
+def _extract_session_vector(f, sess_ds):
+    """Extrae un vector 1D de sesiones (numerico o strings) desde HDF5."""
+    if isinstance(sess_ds, h5py.Dataset):
+        if sess_ds.dtype.kind == "O":
+            # Cell array de strings en MATLAB: cada celda es una referencia a un vector de caracteres
+            labels = []
+            for ref in sess_ds.flat:
+                char_ds = f[ref]
+                s = "".join(chr(c) for c in np.array(char_ds).ravel())
+                labels.append(s)
+            return np.array(labels)
+        elif sess_ds.dtype.kind in ("S", "U"):
+            return np.array(sess_ds).ravel()
+        else:
+            return np.array(sess_ds).ravel()
+    return np.array(sess_ds).ravel()
+
+
 def read_caliali_traces(mat_path):
-    """Lee CaliAli_traces_*.mat (formato MATLAB v7.3 HDF5).
+    """Lee CaliAli_traces_*.mat (formato MATLAB v7.3 HDF5 o v7 clásico).
 
     Devuelve:
         subs_S: lista de arrays [S_0, S_1, S_2, S_3], cada uno (n_frames_i, n_neurons)
         fps: frecuencia de muestreo en Hz
     """
-    with h5py.File(mat_path, "r") as f:
-        fps = 20.0
-        if "fps" in f:
-            fps_ds = f["fps"]
-            fps = float(fps_ds[0, 0] if fps_ds.ndim > 1 else fps_ds[0])
-        elif "traces" in f and "fps" in f["traces"]:
-            fps_ds = f["traces"]["fps"]
-            fps = float(fps_ds[0, 0] if fps_ds.ndim > 1 else fps_ds[0])
+    fps = 20.0
 
-        if "traces" not in f:
-            raise KeyError("No se encontro el grupo 'traces' en {}. Claves: {}".format(mat_path, list(f.keys())))
+    # Intento 1: Formato HDF5 (MATLAB v7.3)
+    try:
+        with h5py.File(mat_path, "r") as f:
+            if "fps" in f:
+                fps_ds = f["fps"]
+                fps = float(fps_ds[0, 0] if fps_ds.ndim > 1 else fps_ds[0])
+            elif "traces" in f and "fps" in f["traces"]:
+                fps_ds = f["traces"]["fps"]
+                fps = float(fps_ds[0, 0] if fps_ds.ndim > 1 else fps_ds[0])
 
-        traces_obj = f["traces"]
+            if "traces" not in f:
+                raise KeyError("No se encontro el grupo 'traces' en {}. Claves: {}".format(mat_path, list(f.keys())))
 
-        # Caso 1: struct array de referencias (4 subsesiones)
-        if isinstance(traces_obj, h5py.Dataset) and traces_obj.dtype.kind == "O":
-            subs_S = []
-            for ref in traces_obj.flat:
-                sub_grp = f[ref]
-                s_ds = sub_grp["S"]
-                s_arr = np.array(s_ds, dtype=np.float32)
-                if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
-                    s_arr = s_arr.T
-                subs_S.append(s_arr)
-            return subs_S, fps
+            traces_obj = f["traces"]
 
-        # Caso 2: Grupo traces
-        if isinstance(traces_obj, h5py.Group):
-            sub_keys = [k for k in traces_obj.keys() if k.isdigit() or k.lower().startswith("sub")]
-            if sub_keys:
+            # Caso 1: traces es un Dataset de referencias (struct array de 4 subsesiones)
+            if isinstance(traces_obj, h5py.Dataset) and traces_obj.dtype.kind == "O":
                 subs_S = []
-                for k in sorted(sub_keys):
-                    s_arr = np.array(traces_obj[k]["S"], dtype=np.float32)
+                for ref in traces_obj.flat:
+                    sub_grp = f[ref]
+                    s_arr = _extract_sparse_or_dense(f, sub_grp["S"])
                     if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
                         s_arr = s_arr.T
                     subs_S.append(s_arr)
                 return subs_S, fps
 
-            # Matriz 2D global 'S' particionada por 'session'
-            if "S" in traces_obj:
-                s_arr = np.array(traces_obj["S"], dtype=np.float32)
-                if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
-                    s_arr = s_arr.T
+            # Caso 2: traces es un Grupo HDF5
+            if isinstance(traces_obj, h5py.Group):
+                # 2a. Sub-grupos explícitos (ej: 'sub1', 'sub2', ...)
+                sub_keys = [k for k in traces_obj.keys() if k.isdigit() or k.lower().startswith("sub")]
+                if sub_keys:
+                    subs_S = []
+                    for k in sorted(sub_keys):
+                        s_arr = _extract_sparse_or_dense(f, traces_obj[k]["S"])
+                        if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
+                            s_arr = s_arr.T
+                        subs_S.append(s_arr)
+                    return subs_S, fps
 
-                if "session" in traces_obj:
-                    sess_ds = traces_obj["session"]
-                    sess_vec = np.array(sess_ds).ravel()
-                    if len(sess_vec) == len(s_arr):
-                        _, idx = np.unique(sess_vec, return_index=True)
-                        unique_ordered = sess_vec[np.sort(idx)]
-                        subs_S = [s_arr[sess_vec == u] for u in unique_ordered]
+                # 2b. Matriz o Cell array 'S'
+                if "S" in traces_obj:
+                    extracted = _extract_sparse_or_dense(f, traces_obj["S"])
+
+                    # Si 'S' era un cell array de 4 matrices, ya viene como lista
+                    if isinstance(extracted, list):
+                        subs_S = []
+                        for sub_mat in extracted:
+                            if sub_mat.ndim == 2 and sub_mat.shape[0] < sub_mat.shape[1]:
+                                sub_mat = sub_mat.T
+                            subs_S.append(sub_mat)
                         return subs_S, fps
 
-                return [s_arr], fps
+                    s_arr = extracted
+                    if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
+                        s_arr = s_arr.T
 
-        raise ValueError("Estructura no reconocida para 'traces' en {}".format(mat_path))
+                    # Particionar por traces.session si existe
+                    if "session" in traces_obj:
+                        sess_vec = _extract_session_vector(f, traces_obj["session"])
+                        if len(sess_vec) == len(s_arr):
+                            _, idx = np.unique(sess_vec, return_index=True)
+                            unique_ordered = sess_vec[np.sort(idx)]
+                            subs_S = [s_arr[sess_vec == u] for u in unique_ordered]
+                            return subs_S, fps
+
+                    return [s_arr], fps
+
+            raise ValueError("Estructura no reconocida para 'traces' en {}".format(mat_path))
+
+    except (OSError, IOError):
+        # Intento 2: Formato MATLAB v5 / v7 clásico (scipy.io.loadmat)
+        import scipy.io as sio
+        d = sio.loadmat(mat_path, squeeze_me=True, struct_as_record=False)
+        traces = d.get("traces")
+        if traces is None:
+            raise KeyError("No se encontro 'traces' en {}".format(mat_path))
+        fps = float(getattr(d, "fps", getattr(traces, "fps", 20.0)))
+
+        S = getattr(traces, "S")
+        if hasattr(S, "toarray"):  # scipy sparse matrix
+            S = S.toarray()
+
+        if isinstance(S, np.ndarray) and S.dtype == object:
+            subs_S = []
+            for sub_s in S:
+                arr = sub_s.toarray() if hasattr(sub_s, "toarray") else np.asarray(sub_s, dtype=np.float32)
+                if arr.ndim == 2 and arr.shape[0] < arr.shape[1]:
+                    arr = arr.T
+                subs_S.append(arr)
+            return subs_S, fps
+
+        S = np.asarray(S, dtype=np.float32)
+        if S.ndim == 2 and S.shape[0] < S.shape[1]:
+            S = S.T
+
+        sess = getattr(traces, "session", None)
+        if sess is not None:
+            sess_vec = np.asarray(sess).ravel()
+            if len(sess_vec) == len(S):
+                _, idx = np.unique(sess_vec, return_index=True)
+                unique_ordered = sess_vec[np.sort(idx)]
+                subs_S = [S[sess_vec == u] for u in unique_ordered]
+                return subs_S, fps
+
+        return [S], fps
