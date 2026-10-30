@@ -478,9 +478,6 @@ def main():
         caliali_dir=args.caliali_dir,
         overwrite=args.overwrite,
     )
-        include_dlc_defects=args.include_dlc_defects,
-        caliali_dir=args.caliali_dir,
-    )
 
 
 if __name__ == "__main__":
