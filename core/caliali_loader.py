@@ -80,7 +80,7 @@ def _extract_sparse_or_dense(f, obj):
         # Si es un dataset de referencias (Cell array en MATLAB)
         elif obj.dtype.kind == "O":
             mats = []
-            for ref in obj.flat:
+            for ref in np.asarray(obj).ravel():
                 ref_obj = f[ref]
                 mats.append(_extract_sparse_or_dense(f, ref_obj))
             return mats
@@ -94,7 +94,7 @@ def _extract_session_vector(f, sess_ds):
         if sess_ds.dtype.kind == "O":
             # Cell array de strings en MATLAB: cada celda es una referencia a un vector de caracteres
             labels = []
-            for ref in sess_ds.flat:
+            for ref in np.asarray(sess_ds).ravel():
                 char_ds = f[ref]
                 s = "".join(chr(c) for c in np.array(char_ds).ravel())
                 labels.append(s)
@@ -133,7 +133,7 @@ def read_caliali_traces(mat_path):
             # Caso 1: traces es un Dataset de referencias (struct array de 4 subsesiones)
             if isinstance(traces_obj, h5py.Dataset) and traces_obj.dtype.kind == "O":
                 subs_S = []
-                for ref in traces_obj.flat:
+                for ref in np.asarray(traces_obj).ravel():
                     sub_grp = f[ref]
                     s_arr = _extract_sparse_or_dense(f, sub_grp["S"])
                     if s_arr.ndim == 2 and s_arr.shape[0] < s_arr.shape[1]:
