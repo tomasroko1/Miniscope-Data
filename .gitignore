@@ -9,12 +9,18 @@ __pycache__/
 data/
 results/
 external/Stoixeion/
-coactivation_analysis/results/
 cache/
 cache_plots/
 felix-cache/
 install.cmd
 Mapas_Generados/
+
+# Stoixeion & ensemble analyses (temporalmente fuera del repo)
+*stoixeion*
+plot_publication_ensembles.py
+run_fast_cluster.sh
+analisis_ensembles/
+coactivation_analysis/
 
 # local reports, references and notes
 informe/
@@ -23,11 +29,8 @@ notas.txt
 
 # local documentation
 *.md
+!/README.md
 !/ESTRUCTURA_DATOS_GDI.md
-/README.md
-/FORMATO_DATOS_MINISCOPE.md
-/EXPLICACION_MAPPING_Y_ESTABILIDAD_HABL.md
-coactivation_analysis/README.md
 
 # local run logs
 *.log
