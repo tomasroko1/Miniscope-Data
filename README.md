@@ -13,7 +13,6 @@ Procesamiento y generación de mapas de actividad espacial en CA1.
 │   └── place_fields.py                  # Estimador gaussiano continuo de rate maps
 ├── run_batch.py                         # Script principal de procesamiento y generación de figuras
 ├── run_caliali_batch.sh                 # Wrapper para ejecutar en el servidor/clúster
-├── generar_diagnostico_dlc_excluidos.py # Control de calidad para sesiones con saltos de DeepLabCut
 └── requirements.txt                     # Dependencias mínimas de Python
 ```
 
@@ -31,7 +30,7 @@ pip install -r requirements.txt
 
 ## Uso
 
-Los scripts leen la trayectoria desde `DataBase` y la actividad de calcio desde desde `GDi` (CaliAli):
+Los scripts leen la trayectoria desde `DataBase` y la actividad de calcio desde `GDi` (CaliAli):
 - **Trayectoria:** `/mnt/NAS/Miniscopes/Reg_CA1/DataBase`
 - **CaliAli:** `/mnt/NAS/Miniscopes/Reg_CA1/GDi`
 

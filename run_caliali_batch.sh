@@ -207,10 +207,12 @@ ${PYTHON} run_batch.py \
     --out-dir "${OUT_DIR}" "$@"
 
 # 2. Diagnóstico visual para sesiones excluidas (R004-XsS-CNO y R005-XsS-VEH)
-echo ">> Ejecutando diagnostico de sesiones excluidas..."
-${PYTHON} generar_diagnostico_dlc_excluidos.py \
-    --data-dir "${DATA_DIR}" \
-    --out-dir "${OUT_DIR}"
+if [ -f "${REPO_DIR}/generar_diagnostico_dlc_excluidos.py" ]; then
+    echo ">> Ejecutando diagnostico de sesiones excluidas..."
+    ${PYTHON} "${REPO_DIR}/generar_diagnostico_dlc_excluidos.py" \
+        --data-dir "${DATA_DIR}" \
+        --out-dir "${OUT_DIR}"
+fi
 
 # 3. Limpieza de directorios vacíos que hayan quedado
 find "${OUT_DIR}" -type d -empty -delete 2>/dev/null || true

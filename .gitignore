@@ -34,3 +34,4 @@ notas.txt
 
 # local run logs
 *.log
+generar_diagnostico_dlc_excluidos.py
