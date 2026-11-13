@@ -1,22 +1,29 @@
-# Flujo CaliAli v5
+# Procesamiento con CaliAli v5
 
-El usuario identificó `/mnt/NAS/Miniscopes/CaliAli/v5/` como el flujo que usa actualmente. `v5/` contiene una copia de sus archivos `caliali_*.m` y de su README original, obtenida el 13 de noviembre de 2026. El archivo `CaliAli_my_parameters.m` se copió de la carpeta padre `/mnt/NAS/Miniscopes/CaliAli/`: es una referencia; comprobar cuál está en el MATLAB path de cada corrida. El ejemplo original es `v5/caliali_workflow_example.m`.
+El punto de entrada es [`v5/caliali_workflow_example.m`](v5/caliali_workflow_example.m), una copia del ejemplo que se usa en el clúster. Se ejecuta **por secciones** desde MATLAB; el recorte y la selección de semillas son interactivos.
 
-La copia **no incluye el paquete CaliAli-main** ni sus dependencias. El servidor usa una instalación externa con parches locales; el README original enumera los parches. No está probado que esta copia sea ejecutable fuera del entorno original. No asumir que v5 generó todos los archivos históricos.
+## Dependencias
 
-## Etapas según el ejemplo original
+El archivo de ejecución usa las funciones y la instalación de CaliAli que ya están en el clúster. No las incluye dentro del repositorio:
 
-1. `caliali_status(animal)`: consultar el estado de cada día.
-2. `caliali_run(animal, 'mc')`: downsampling, tratamiento de franjas y corrección de movimiento.
-3. `caliali_crop_animal(animal)`: **interactivo**, un recorte compartido para el animal.
-4. `caliali_run(animal, 'align')`: alineación de las fases; revisar sus imágenes de control.
-5. `caliali_set_seeds(day)`: **interactivo**, selección de umbrales y máscara por día.
-6. `caliali_run(animal, 'extract')`: extracción CNMF-E y resumen para los días preparados.
+```text
+/mnt/NAS/Miniscopes/CaliAli/v5/       Funciones del flujo
+/mnt/data1/CaliAli/CaliAli-main/      Instalación CaliAli del servidor
+```
 
-Los resultados exportados incluyen `CaliAli_result`, `CaliAli_summary` y `CaliAli_traces`. En las trazas, las filas son neuronas y las columnas cuadros; las fases se guardan separadas. Se incluyen `C`, `C_raw`, `S`, `raw_frame` y las marcas de cuadros con franjas. `raw_frame` es una referencia importante para sincronizar con comportamiento, pero esa sincronización aún necesita validación.
+La configuración `CaliAli_my_parameters.m` debe estar disponible en el entorno de MATLAB. El ejemplo del clúster usa un directorio de trabajo local y guarda los resultados finales en la carpeta de cada sesión en el NAS. Comprobar rutas y parámetros en el servidor donde se ejecute. Esta copia del repositorio no fue validada como instalación independiente.
 
-## Efectos sobre archivos
+## Orden de trabajo
 
-Los comandos originales trabajan sobre rutas configuradas del NAS y del directorio de trabajo. No son operaciones de solo lectura: según la etapa, crean, reemplazan o eliminan archivos intermedios. En particular, `caliali_clean_day` elimina archivos y `caliali_redeconv` con un único valor puede reescribir resúmenes y trazas compartidas. **No ejecutar estas operaciones sobre los originales para una prueba aislada.**
+1. **Estado:** elegir el animal y consultar sus días con `caliali_status`.
+2. **Corrección:** ejecutar `caliali_run(animal, 'mc')` para preparar los videos y corregir movimiento.
+3. **Recorte:** ejecutar `caliali_crop_animal(animal)` y seleccionar el área interactiva.
+4. **Alineación:** ejecutar `caliali_run(animal, 'align')` y revisar las imágenes de control.
+5. **Semillas:** ejecutar `caliali_set_seeds` para cada día y ajustar sus parámetros en la interfaz.
+6. **Extracción:** ejecutar `caliali_run(animal, 'extract')` para los días preparados.
 
-Para pruebas de redeconvolución, preparar una salida aislada y verificar las trazas antes de sustituir cualquier resultado compartido.
+Los resultados incluyen `CaliAli_result`, `CaliAli_summary` y `CaliAli_traces`. Las trazas contienen `C`, `C_raw`, `S`, los nombres de fase y referencias a cuadros originales y artefactos.
+
+## Antes de ejecutar
+
+El script de ejemplo apunta a rutas compartidas y sus etapas pueden crear, reemplazar o borrar archivos intermedios. La limpieza y la aplicación de un valor individual de redeconvolución también pueden modificar resultados. Para pruebas, usar una copia aislada y una salida nueva. Conservar el mismo conjunto de parámetros entre días del animal cuando se planee registrarlos entre sí.

@@ -32,7 +32,6 @@ notas.txt
 !/README.md
 !/ESTRUCTURA_DATOS_GDI.md
 !/pipeline/caliali/README.md
-!/pipeline/caliali/v5/README_ORIGINAL.md
 
 # local run logs
 *.log
